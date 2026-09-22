@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#050607">
+<title>МИШУТКА: Протокол «Тишина» — 2D хоррор-платформер</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔦</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800&family=Cormorant+Garamond:ital,wght@0,500;0,700;1,500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game" width="1280" height="720"></canvas>
+  <div id="grain"></div>
+  <div id="vignette"></div>
+  <div id="damage-flash"></div>
+  <div id="sanity-fx"></div>
+  <div id="fade"></div>
+
+  <!-- ============ HUD ============ -->
+  <div id="hud" class="hidden">
+    <div id="status-panel">
+      <div id="portrait-frame"><canvas id="portrait" width="96" height="96"></canvas></div>
+      <div id="bars">
+        <div class="bar hp"><div id="hp-fill"></div><span class="bar-label">ЗДОРОВЬЕ</span><span id="hp-num" class="bar-num"></span></div>
+        <div class="bar st"><div id="st-fill"></div><span class="bar-label">ВЫНОСЛИВОСТЬ</span></div>
+        <div class="bar san"><div id="san-fill"></div><span class="bar-label">РАССУДОК</span></div>
+      </div>
+    </div>
+    <div id="inventory"></div>
+    <div id="hand-panel">
+      <div id="hand-icon">✊</div>
+      <div id="hand-text"><div id="hand-name">Руки</div><div id="hand-ammo"></div></div>
+    </div>
+    <div id="notes-counter" title="Найденные записки">📄 <b id="notes-num">0/8</b></div>
+    <div id="objective"></div>
+    <div id="boss-bar" class="hidden">
+      <div id="boss-name">☠ ГЛАВВРАЧ ТАМИК ☠</div>
+      <div class="bar boss"><div id="boss-fill"></div></div>
+    </div>
+    <div id="interact-prompt" class="hidden"></div>
+    <div id="channel-bar" class="hidden"><div id="channel-fill"></div><span id="channel-label"></span></div>
+    <div id="toast-wrap"></div>
+    <div id="subtitle" class="hidden"></div>
+  </div>
+
+  <button id="mute-btn" title="Звук (M)">🔊</button>
+
+  <!-- ============ ЗАПИСКА ============ -->
+  <div id="note-modal" class="hidden">
+    <div id="note-paper">
+      <div id="note-title"></div>
+      <div id="note-body"></div>
+      <div id="note-footer"><span id="note-count"></span><button id="note-close">Читать дальше… [E]</button></div>
+    </div>
+  </div>
+
+  <!-- ============ ТИТУЛ ============ -->
+  <div id="title-screen">
+    <div class="fog f1"></div><div class="fog f2"></div><div class="fog f3"></div>
+    <div id="title-lamp"><div id="title-lamp-glow"></div></div>
+    <div id="title-drip"></div>
+    <div id="title-inner">
+      <div id="title-over">психбольница №6 представляет</div>
+      <h1 id="game-title">МИШУТКА</h1>
+      <h2>ПРОТОКОЛ «ТИШИНА»</h2>
+      <p class="tagline">2D хоррор-платформер • найди записки • вспомни • выживи</p>
+      <div id="menu">
+        <button id="btn-new" class="mbtn">🕯&nbsp; Новая игра</button>
+        <button id="btn-continue" class="mbtn hidden">▶&nbsp; Продолжить</button>
+        <button id="btn-help" class="mbtn">❓&nbsp; Управление и сюжет</button>
+      </div>
+      <p class="hint">🎧 играй в наушниках • клик по экрану включает звук</p>
+    </div>
+    <div id="title-walker"></div>
+  </div>
+
+  <!-- ============ КАТСЦЕНА (3D) ============ -->
+  <div id="cutscene" class="hidden">
+    <div id="cs-scene">
+      <div id="cs-corridor"></div>
+      <div id="cs-figure"></div>
+      <div id="cs-siren"></div>
+      <canvas id="cs-rain" width="1280" height="720"></canvas>
+      <div id="cs-vignette"></div>
+    </div>
+    <div id="cs-panel">
+      <div id="cs-title"></div>
+      <div id="cs-text"></div>
+      <div id="cs-row">
+        <button id="cs-skip" class="mbtn small">Пропустить ⏭</button>
+        <div id="cs-progress"></div>
+        <button id="cs-next" class="mbtn small">Далее ▶</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ ПОМОЩЬ ============ -->
+  <div id="help-modal" class="hidden">
+    <div class="modal-box">
+      <h3>📋 Управление</h3>
+      <div class="controls-grid">
+        <span><b>A / D</b> или <b>← / →</b></span><span>движение</span>
+        <span><b>Space / W</b></span><span>прыжок</span>
+        <span><b>Shift</b></span><span>бег (тратит выносливость)</span>
+        <span><b>Мышь</b></span><span>фонарь и прицел (фонарь в руке Мишутки!)</span>
+        <span><b>ЛКМ / J</b></span><span>атака</span>
+        <span><b>E</b></span><span>обыскать / взять / открыть / читать</span>
+        <span><b>F</b></span><span>вкл/выкл фонарь</span>
+        <span><b>1 / 2 / 3 / 4</b></span><span>руки / нож / пистолет / затычка</span>
+        <span><b>R</b></span><span>перезарядить пистолет</span>
+        <span><b>Q</b></span><span>аптечка (+здоровье)</span>
+        <span><b>T</b></span><span>пилюли (+рассудок)</span>
+        <span><b>Esc / P</b></span><span>пауза</span>
+        <span><b>M</b></span><span>звук вкл/выкл</span>
+      </div>
+      <h3>🕯 Как играть</h3>
+      <p class="help-text">Ты — <b>Мишутка</b>. Ты очнулся в психбольнице №6 и ничего не помнишь.
+      Обыскивай <b>шкафчики, тумбочки и каталки</b> (подойди и нажми <b>E</b>), находи <b>записки (8 шт.)</b> — они вернут память.
+      Тьма сводит с ума: держись света ламп и не выключай фонарь. Тени в голове <b>боятся света</b> — подсвечивай их перед атакой.
+      Найди <b>нож</b>, <b>пистолет</b> и <b>затычку-отмычку</b> для запертых дверей. Собери ≥4 записок — и красная дверь в кабинет <b>главврача Тамика</b> откроется…</p>
+      <button id="help-close" class="mbtn">Понятно</button>
+    </div>
+  </div>
+
+  <!-- ============ ПАУЗА ============ -->
+  <div id="pause-menu" class="hidden">
+    <div class="modal-box">
+      <h3>⏸ Пауза</h3>
+      <p id="pause-stats" class="help-text"></p>
+      <button id="btn-resume" class="mbtn">▶ Продолжить [Esc]</button>
+      <button id="btn-mute2" class="mbtn">🔊 Звук: вкл</button>
+      <button id="btn-restart" class="mbtn danger">↻ Начать заново</button>
+      <button id="btn-quit-title" class="mbtn danger">🏚 Выйти в меню</button>
+    </div>
+  </div>
+
+  <!-- ============ СМЕРТЬ ============ -->
+  <div id="dead-screen" class="hidden">
+    <div class="fog f1"></div>
+    <h1 class="dead-title">ТЫ РАСТВОРИЛСЯ В ТИШИНЕ</h1>
+    <p id="dead-quote"></p>
+    <div><button id="btn-retry" class="mbtn">🕯 Очнуться (с автосохранения)</button>
+    <button id="btn-dead-title" class="mbtn danger">🏚 В меню</button></div>
+  </div>
+
+  <!-- ============ ПОБЕДА ============ -->
+  <div id="win-screen" class="hidden">
+    <div class="fog f2"></div>
+    <h1 id="win-ending"></h1>
+    <p id="win-text"></p>
+    <p id="win-stats"></p>
+    <div><button id="btn-again" class="mbtn">↻ Играть снова</button>
+    <button id="btn-win-title" class="mbtn">🏚 В меню</button></div>
+  </div>
+
+  <!-- ============ ТАЧ ============ -->
+  <div id="touch" class="hidden">
+    <div id="tc-left-pad">
+      <button id="tc-left">◀</button><button id="tc-right">▶</button>
+    </div>
+    <div id="tc-right-pad">
+      <button id="tc-use">E</button><button id="tc-atk">⚔</button><button id="tc-jump">⤒</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/audio.js"></script>
+<script src="js/data.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/entities.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
