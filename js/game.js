@@ -21,6 +21,12 @@ const Game = {
   seenRooms: {}, jumpScareT: 0, jumpScareKind: null, musicBoss: null, heartT: 0,
 
   modalOpen() { return this.noteId !== null; },
+  /* защита от падения кадра: пишем в консоль и продолжаем */
+  reportError(where, e) {
+    this.errCount = (this.errCount || 0) + 1;
+    if (this.errCount <= 5) console.error('[МИШУТКА] сбой в ' + where + ':', e && e.message ? e.message : e);
+    else if (this.errCount === 6) console.error('[МИШУТКА] дальнейшие сбои скрыты');
+  },
 
   /* ================= INIT ================= */
   init() {
@@ -1218,12 +1224,17 @@ const Game = {
     Input.mouse.wx = Input.mouse.sx + Camera.x;
     Input.mouse.wy = Input.mouse.sy + Camera.y;
 
-    if (this.state === 'cutscene') this.updateCutscene(dt);
-    else if (this.state === 'play' && !this.paused) this.update(dt);
-    else if (this.state === 'crawl') this.updateCrawl(dt);
-    else if (this.state === 'title') this.titleT += dt;
+    /* один сбойный кадр не должен ронять всю игру */
+    try {
+      if (this.state === 'cutscene') this.updateCutscene(dt);
+      else if (this.state === 'play' && !this.paused) this.update(dt);
+      else if (this.state === 'crawl') this.updateCrawl(dt);
+      else if (this.state === 'title') this.titleT += dt;
+    } catch (e) { this.reportError('update', e); }
 
-    if (this.state !== 'title' && this.state !== 'cutscene') this.render();
+    if (this.state !== 'title' && this.state !== 'cutscene') {
+      try { this.render(); } catch (e) { this.reportError('render', e); }
+    }
     if (Input.pressed['KeyM']) { AudioSys.toggleMute(); this.syncMuteBtn(); }
     if (this.state === 'play') {
       if (Input.pressed['Escape'] || Input.pressed['KeyP']) {
