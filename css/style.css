@@ -47,13 +47,18 @@ body{font-family:'Rubik',system-ui,-apple-system,'Segoe UI',sans-serif;color:var
 .bar.hp>div:first-child{background:linear-gradient(90deg,#5c0a12,var(--blood),#d7263d)}
 .bar.st>div:first-child{background:linear-gradient(90deg,#4d5b12,#9db31c,#e3f34f)}
 .bar.san>div:first-child{background:linear-gradient(90deg,#3b0f54,#7b2fbf,#c77dff)}
+.bar.bat{height:.72vw;min-height:9px}
+.bar.bat>div:first-child{background:linear-gradient(90deg,#4a3a05,#d4a017,#ffe066)}
+#floor-ind{position:absolute;left:1.2%;top:8.5%;background:var(--panel);border-left:3px solid #ffd166;
+  padding:.35vw .8vw;font-size:clamp(10px,.85vw,15px);font-weight:700;letter-spacing:.08em;
+  border-radius:.3vw;box-shadow:0 0 14px rgba(0,0,0,.7)}
 .bar-label{position:absolute;left:4px;top:50%;transform:translateY(-50%);font-size:.55vw;min-font-size:7px;
   font-size:clamp(7px,.55vw,11px);letter-spacing:.08em;color:#fff;text-shadow:0 1px 2px #000;opacity:.85}
 .bar-num{position:absolute;right:4px;top:50%;transform:translateY(-50%);font-size:clamp(7px,.6vw,11px);color:#fff;text-shadow:0 1px 2px #000}
 
 #inventory{position:absolute;left:50%;bottom:2.5%;transform:translateX(-50%);display:flex;gap:.45vw;
   background:var(--panel);border:1px solid var(--line);border-radius:.6vw;padding:.45vw .6vw}
-.inv-slot{position:relative;width:3.4vw;height:3.4vw;min-width:40px;min-height:40px;background:#0d1113;
+.inv-slot{position:relative;width:3.1vw;height:3.1vw;min-width:40px;min-height:40px;background:#0d1113;
   border:2px solid #2c3537;border-radius:.4vw;display:flex;align-items:center;justify-content:center;
   font-size:1.7vw;cursor:pointer;pointer-events:auto;transition:all .15s}
 @media(max-width:900px){.inv-slot{font-size:22px}}
@@ -226,7 +231,7 @@ body{font-family:'Rubik',system-ui,-apple-system,'Segoe UI',sans-serif;color:var
 /* ---------- тач ---------- */
 #touch{position:absolute;inset:0;z-index:55;pointer-events:none}
 #tc-left-pad{position:absolute;left:2%;bottom:16%;display:flex;gap:10px}
-#tc-right-pad{position:absolute;right:2%;bottom:16%;display:flex;gap:10px}
+#tc-right-pad{position:absolute;right:2%;bottom:16%;display:flex;gap:10px;flex-wrap:wrap-reverse;justify-content:flex-end;max-width:220px}
 #touch button{pointer-events:auto;width:60px;height:60px;border-radius:50%;font-size:22px;
   background:rgba(10,14,16,.6);border:1px solid #3a4344;color:var(--bone)}
 #touch button:active{background:rgba(163,22,33,.5)}

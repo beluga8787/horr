@@ -155,6 +155,25 @@ const AudioSys = {
   },
   thunder() { this.noise(1.4, 0.2, 120, 1, 'lowpass', 0, 50); },
 
+  powerOn() {
+    this.noise(0.5, 0.22, 120, 1, 'lowpass');
+    this.tone(60, 0.9, 'sawtooth', 0.16, 180);
+    this.tone(120, 0.6, 'square', 0.1, 240, 0.1);
+    for (let i = 0; i < 5; i++) this.tone(300 + i * 160, 0.1, 'square', 0.05, null, i * 0.09);
+  },
+  elevator() { this.tone(70, 1.6, 'sawtooth', 0.12, 55); this.noise(1.6, 0.08, 300, 1, 'lowpass'); },
+  elevatorDing() { this.tone(880, 0.45, 'sine', 0.16); this.tone(1320, 0.5, 'sine', 0.1, null, 0.05); },
+  glass() {
+    this.noise(0.25, 0.35, 4200, 1.2, 'highpass');
+    for (let i = 0; i < 7; i++) this.tone(1600 + Math.random() * 3400, 0.12, 'triangle', 0.06, 900, i * 0.02);
+  },
+  musicBox() {
+    const notes = [659, 784, 880, 784, 659, 587, 523, 587];
+    notes.forEach((f, i) => {
+      this.tone(f, 1.1, 'sine', 0.09, null, i * 0.42);
+      this.tone(f * 2, 0.9, 'triangle', 0.03, null, i * 0.42 + 0.02);
+    });
+  },
   /* ---- вызывается каждый кадр из игры ---- */
   update(dt, hp, san, danger) {
     if (!this.started || this.muted) return;

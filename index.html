@@ -28,14 +28,16 @@
         <div class="bar hp"><div id="hp-fill"></div><span class="bar-label">ЗДОРОВЬЕ</span><span id="hp-num" class="bar-num"></span></div>
         <div class="bar st"><div id="st-fill"></div><span class="bar-label">ВЫНОСЛИВОСТЬ</span></div>
         <div class="bar san"><div id="san-fill"></div><span class="bar-label">РАССУДОК</span></div>
+        <div class="bar bat"><div id="bat-fill"></div><span class="bar-label">🔦 БАТАРЕЯ</span></div>
       </div>
     </div>
+    <div id="floor-ind">▚ 1 ЭТАЖ</div>
     <div id="inventory"></div>
     <div id="hand-panel">
       <div id="hand-icon">✊</div>
       <div id="hand-text"><div id="hand-name">Руки</div><div id="hand-ammo"></div></div>
     </div>
-    <div id="notes-counter" title="Найденные записки">📄 <b id="notes-num">0/8</b></div>
+    <div id="notes-counter" title="Найденные записки">📄 <b id="notes-num">0/12</b></div>
     <div id="objective"></div>
     <div id="boss-bar" class="hidden">
       <div id="boss-name">☠ ГЛАВВРАЧ ТАМИК ☠</div>
@@ -104,24 +106,32 @@
       <h3>📋 Управление</h3>
       <div class="controls-grid">
         <span><b>A / D</b> или <b>← / →</b></span><span>движение</span>
-        <span><b>Space / W</b></span><span>прыжок</span>
+        <span><b>Space / W</b></span><span>прыжок (держи — выше; <b>S + прыжок</b> — спрыгнуть)</span>
+        <span><b>W / S</b> у лестницы</span><span>лезть вверх / вниз (3 этажа!)</span>
         <span><b>Shift</b></span><span>бег (тратит выносливость)</span>
-        <span><b>Мышь</b></span><span>фонарь и прицел (фонарь в руке Мишутки!)</span>
+        <span><b>Мышь</b></span><span>фонарь и прицел (фонарь в руке Мишутки)</span>
         <span><b>ЛКМ / J</b></span><span>атака</span>
-        <span><b>E</b></span><span>обыскать / взять / открыть / читать</span>
+        <span><b>E</b></span><span>обыскать / взять / открыть / лифт / вентиляция</span>
+        <span><b>ЛКМ + тянуть</b></span><span>вскрыть замок / выдвинуть ящик / отогнуть крышку</span>
         <span><b>F</b></span><span>вкл/выкл фонарь</span>
+        <span><b>H</b></span><span>спрятаться в шкаф (E — вылезти)</span>
+        <span><b>G</b></span><span>бросить бутылку — отвлечь тварей</span>
         <span><b>1 / 2 / 3 / 4</b></span><span>руки / нож / пистолет / затычка</span>
+        <span><b>1–5 в щитке</b></span><span>рубильники (порядок 3-1-4)</span>
         <span><b>R</b></span><span>перезарядить пистолет</span>
-        <span><b>Q</b></span><span>аптечка (+здоровье)</span>
-        <span><b>T</b></span><span>пилюли (+рассудок)</span>
-        <span><b>Esc / P</b></span><span>пауза</span>
-        <span><b>M</b></span><span>звук вкл/выкл</span>
+        <span><b>Q / T / B</b></span><span>аптечка / пилюли / батарейка в фонарь</span>
+        <span><b>Esc / P</b></span><span>пауза, <b>M</b> — звук</span>
       </div>
       <h3>🕯 Как играть</h3>
       <p class="help-text">Ты — <b>Мишутка</b>. Ты очнулся в психбольнице №6 и ничего не помнишь.
-      Обыскивай <b>шкафчики, тумбочки и каталки</b> (подойди и нажми <b>E</b>), находи <b>записки (8 шт.)</b> — они вернут память.
-      Тьма сводит с ума: держись света ламп и не выключай фонарь. Тени в голове <b>боятся света</b> — подсвечивай их перед атакой.
-      Найди <b>нож</b>, <b>пистолет</b> и <b>затычку-отмычку</b> для запертых дверей. Собери ≥4 записок — и красная дверь в кабинет <b>главврача Тамика</b> откроется…</p>
+      Обыскивай мебель (<b>E</b>), находи <b>12 записок</b> — по 4 на каждом из трёх этажей. Записки возвращают память; 9 штук нужно, чтобы открыть дверь Тамика, а все 12 дают истинную концовку.<br>
+      <b>Раскладка:</b> 1 этаж — приёмная, гардероб, столовая, морг, архив, лифт, прачечная (щиток).
+      2 этаж — палаты, процедурная, изолятор, операционная, лифт, детское отделение.
+      3 этаж — чердак, рентген, ординаторская Тамика, зал «Тишина». Лифт и лестницы соединяют этажи.<br>
+      <b>Три пса Тамика</b> (мини-боссы): <b>Санитар-Мясник</b> (морг) — ключ-карта лифта, <b>Сестра Милосердия</b> (процедурная) — ключ от чердака, <b>Хирург без лица</b> (операционная) — ключ ординаторской.<br>
+      <b>Затычка</b> открывает замки, решётки вентиляции и щиток — и ею можно <b>ЗАТКНУТЬ дверь</b> за собой: твари будут грызть её, пока ты уходишь.<br>
+      <b>Свет — жизнь:</b> подсвеченные твари получают больше урона, во тьме рассудок тает. Батарейки в фонаре кончаются — ищи новые [B].<br>
+      <b>Прячься</b> в шкафах [H], <b>бросай бутылки</b> [G], чтобы увести их от себя.</p>
       <button id="help-close" class="mbtn">Понятно</button>
     </div>
   </div>
@@ -163,7 +173,7 @@
       <button id="tc-left">◀</button><button id="tc-right">▶</button>
     </div>
     <div id="tc-right-pad">
-      <button id="tc-use">E</button><button id="tc-atk">⚔</button><button id="tc-jump">⤒</button>
+      <button id="tc-use">E</button><button id="tc-atk">⚔</button><button id="tc-down">⤓</button><button id="tc-jump">⤒</button>
     </div>
   </div>
 </div>
