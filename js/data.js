@@ -3,14 +3,106 @@
    ============================================================ */
 'use strict';
 
-/* ---------------- ОРУЖИЕ / ПРЕДМЕТЫ ---------------- */
+/* ---------------- ОРУЖИЕ / ПРЕДМЕТЫ ----------------
+   kind: 'melee' | 'gun'. Для melee: range/knock/stun.
+   Для gun: mag/spread/pellets/range/cost (патронов за выстрел). */
 const WEAPONS = {
-  hands: { name: 'Руки',     icon: '✊', dmg: 13, range: 80,  cd: 0.30, stam: 5,  desc: 'Кулаки. Всегда с тобой.' },
-  knife: { name: 'Нож',      icon: '🔪', dmg: 34, range: 96,  cd: 0.26, stam: 7,  desc: 'Скальпель из процедурной. Режет и плоть, и тени.' },
-  pistol:{ name: 'Пистолет', icon: '🔫', dmg: 68, range: 980, cd: 0.5,  stam: 10, desc: 'Табельный ПМ охранника. Громкий. Притягивает тварей.' },
-  pick:  { name: 'Затычка',  icon: '🥄', dmg: 9,  range: 74,  cd: 0.36, stam: 4,  desc: 'Гнутая ложка-отмычка: вскрывает замки, решётки, вентиляцию и щитки. Бьёт с гулким ЗВОНом — оглушает тварей.' },
+  /* ===== БЛИЖНИЙ БОЙ ===== */
+  hands:   { name: 'Кулаки',            icon: '✊',  kind: 'melee', dmg: 13, range: 80,  cd: 0.30, stam: 5,  knock: 60,  shape: 'fist',
+             desc: 'Кулаки Мишутки. Всегда с тобой — и всегда недостаточно.' },
+  scalpel: { name: 'Скальпель',         icon: '🗡️', kind: 'melee', dmg: 24, range: 84,  cd: 0.19, stam: 4,  knock: 40,  shape: 'blade', bleed: 3,
+             desc: 'Хирургический скальпель. Бьёт очень часто — тени не успевают опомниться.' },
+  knife:   { name: 'Нож',               icon: '🔪',  kind: 'melee', dmg: 36, range: 96,  cd: 0.26, stam: 7,  knock: 70,  shape: 'blade', bleed: 2,
+             desc: 'Кухонный нож из столовой. Режет и плоть, и память.' },
+  mop:     { name: 'Швабра',            icon: '🧹',  kind: 'melee', dmg: 17, range: 128, cd: 0.34, stam: 4,  knock: 95,  shape: 'long',
+             desc: 'Длинная швабра из прачечной. Бьёт слабо, зато достаёт далеко.' },
+  crutch:  { name: 'Костыль',           icon: '🩼',  kind: 'melee', dmg: 30, range: 112, cd: 0.36, stam: 6,  knock: 135, shape: 'long',
+             desc: 'Чужой костыль. Тяжёлый и честный — отбрасывает тварей.' },
+  pipe:    { name: 'Стальная труба',    icon: '🪈',  kind: 'melee', dmg: 52, range: 108, cd: 0.44, stam: 10, knock: 155, stun: 0.25, shape: 'long',
+             desc: 'Обрезок трубы из подвала. Глушит и откидывает.' },
+  bat:     { name: 'Бейсбольная бита',  icon: '🏏',  kind: 'melee', dmg: 46, range: 114, cd: 0.38, stam: 9,  knock: 145, stun: 0.5,  shape: 'long',
+             desc: 'Чья-то бита с автографом. Оглушает надолго.' },
+  wrench:  { name: 'Разводной ключ',    icon: '🔧',  kind: 'melee', dmg: 42, range: 100, cd: 0.36, stam: 8,  knock: 120, shape: 'tool',
+             desc: 'Тяжёлый ключ слесаря. Хорош и по гайкам, и по черепам.' },
+  crowbar: { name: 'Монтировка',        icon: '⛏️', kind: 'melee', dmg: 58, range: 106, cd: 0.42, stam: 10, knock: 130, shape: 'tool', pry: true,
+             desc: 'Монтировка. Ломает рёбра — и, если приноровиться, замки.' },
+  axe:     { name: 'Топор пожарного',   icon: '🪓',  kind: 'melee', dmg: 76, range: 110, cd: 0.58, stam: 14, knock: 175, stun: 0.55, shape: 'blade',
+             desc: 'Пожарный топор со щита в коридоре. Валит с одного удара.' },
+  shocker: { name: 'Электрошокер',      icon: '⚡',  kind: 'melee', dmg: 28, range: 92,  cd: 0.55, stam: 12, knock: 60,  stun: 1.8, stunGhosts: true, shape: 'tool',
+             desc: 'Шокер охраны. Твари корчатся и замирают — на пару секунд.' },
+  /* ===== ОГНЕСТРЕЛ ===== */
+  pistol:  { name: 'Пистолет ПМ',       icon: '🔫',  kind: 'gun',   dmg: 68,  cd: 0.50, mag: 8,  spread: 0.030, range: 900,  noise: 1150, shape: 'gun',
+             desc: 'Табельный ПМ охранника. Громкий — притягивает всех в радиусе.' },
+  revolver:{ name: 'Револьвер',         icon: '🔫',  kind: 'gun',   dmg: 98,  cd: 0.85, mag: 6,  spread: 0.020, range: 1000, noise: 1250, knockShot: 160, shape: 'gun',
+             desc: 'Револьвер старшего смены. Бьёт как грузовик, перезаряжается долго.' },
+  shotgun: { name: 'Дробовик',          icon: '🔫',  kind: 'gun',   dmg: 40,  cd: 1.05, mag: 5,  spread: 0.170, pellets: 6, range: 440, noise: 1700, knockShot: 240, shape: 'gun_long',
+             desc: 'Обрез из оружейки. Шесть дробинок, отбрасывает даже Смирительного.' },
+  rifle:   { name: 'Карабин',           icon: '🔫',  kind: 'gun',   dmg: 124, cd: 0.95, mag: 5,  spread: 0.012, range: 1400, pierce: 2, noise: 1550, shape: 'gun_long',
+             desc: 'Карабин с рентген-поста. Пробивает тварей насквозь по прямой.' },
+  smg:     { name: 'Пистолет-пулемёт',  icon: '🔫',  kind: 'gun',   dmg: 26,  cd: 0.11, mag: 30, spread: 0.100, range: 700,  noise: 900, shape: 'gun',
+             desc: 'ПП из каптёрки. Много свинца, мало точности — зато в упор косит.' },
+  nailgun: { name: 'Гвоздомёт',         icon: '🔨',  kind: 'gun',   dmg: 34,  cd: 0.22, mag: 20, spread: 0.050, range: 620,  noise: 420, shape: 'tool',
+             desc: 'Пневматический гвоздомёт. Тихий: твари почти не слышат выстрела.' },
+  /* ===== ИНСТРУМЕНТ ===== */
+  pick:    { name: 'Затычка',           icon: '🥄',  kind: 'melee', dmg: 9,  range: 74,  cd: 0.36, stam: 4,  knock: 40, shape: 'tool', tool: true,
+             desc: 'Гнутая ложка-отмычка. Вскрывает замки, решётки, щиток и ЗАТЫКАЕТ двери.' },
 };
-const ORDER = ['hands', 'knife', 'pistol', 'pick'];
+/* порядок быстрого доступа (цифры 1..9 во втором ряду, остальное — колесом) */
+const ORDER = ['hands', 'knife', 'scalpel', 'mop', 'crutch', 'pipe', 'bat', 'wrench', 'crowbar', 'axe', 'shocker', 'pick',
+  'pistol', 'revolver', 'shotgun', 'rifle', 'smg', 'nailgun'];
+
+/* ---------------- ОДЕЖДА ----------------
+   slot: body | head | boots | hands
+   def   — снижение получаемого урона (0.34 = −34%)
+   spd   — прибавка к скорости, san — множитель утечки рассудка (−0.3 = на 30% медленнее),
+   noise — множитель шума, atk — множитель перезарядки удара (−0.1 = на 10% быстрее),
+   stealth — множитель дальности, с которой твари тебя видят, battery — расход батарейки */
+const CLOTHES = {
+  /* ===== ТЕЛО ===== */
+  robe:     { name: 'Больничная роба',     slot: 'body', icon: '🥼', def: 0,    spd: 0,     san: 0,     noise: 0,     torso: '#7d94a0', legs: '#4a5a66', start: true,
+              desc: 'Казённая роба палаты №12. Ничего не даёт — но она твоя.' },
+  orderly:  { name: 'Халат санитара',      slot: 'body', icon: '🥼', def: 0.12, spd: 0,     san: -0.05, noise: -0.05, torso: '#a8bab4', legs: '#5a6a66',
+              desc: 'Белый халат санитара. Твари чуть медлят: пахнет своим.' },
+  leather:  { name: 'Кожаная куртка',      slot: 'body', icon: '🧥', def: 0.22, spd: -0.04, san: 0,     noise: 0.10,  torso: '#4a3226', legs: '#3a2a20',
+              desc: 'Куртка из камеры хранения. Толстая кожа держит удар, но скрипит.' },
+  kevlar:   { name: 'Бронежилет охранника', slot: 'body', icon: '🦺', def: 0.34, spd: -0.10, san: 0,    noise: 0,     torso: '#3d4a3a', legs: '#4a5a66',
+              desc: 'Кевлар с поста охраны. −34% урона, но с ним не побегаешь.' },
+  surgical: { name: 'Стерильная роба хирурга', slot: 'body', icon: '🥼', def: 0.08, spd: 0.02, san: -0.20, noise: -0.15, torso: '#cfe3dd', legs: '#9fb4ae',
+              desc: 'Зелёная роба операционной. В ней память утекает медленнее, а шаги — тише.' },
+  raincoat: { name: 'Дождевик из морга',   slot: 'body', icon: '🧥', def: 0.10, spd: 0,     san: -0.10, noise: -0.10, battery: -0.15, torso: '#8a9c6a', legs: '#5a6a66',
+              desc: 'Прорезиненный дождевик. Шумит меньше, фонарь ест батарейку медленнее.' },
+  /* ===== ГОЛОВА ===== */
+  cap:      { name: 'Кепка пациента',      slot: 'head', icon: '🧢', spd: 0.05,
+              desc: 'Больничная кепка. Легче идти, но голова открыта ветру и шёпоту.' },
+  mask:     { name: 'Хирургическая маска', slot: 'head', icon: '😷', san: -0.30, noise: -0.10,
+              desc: 'Маска с марлей. Почти не пропускает шёпот — рассудок держится крепче.' },
+  helmet:   { name: 'Каска охранника',     slot: 'head', icon: '🪖', def: 0.15, spd: -0.02,
+              desc: 'Стальная каска. Голова цела — значит, и Мишутка.' },
+  hood:     { name: 'Капюшон',             slot: 'head', icon: '🕶️', san: -0.15, stealth: 0.75,
+              desc: 'Глубокий капюшон. Твари замечают тебя на четверть позже.' },
+  /* ===== ОБУВЬ ===== */
+  slippers: { name: 'Больничные тапочки',  slot: 'boots', icon: '🥿', spd: 0.03, noise: -0.25, boots: '#9a8f7a', start: true,
+              desc: 'Мягкие тапки. Тише всех шагов в больнице.' },
+  sneakers: { name: 'Кроссовки',           slot: 'boots', icon: '👟', spd: 0.14, noise: 0.05, boots: '#4a4a52',
+              desc: 'Кроссовки из детского отделения. Быстрее бег — и громче бег.' },
+  boots:    { name: 'Сапоги',              slot: 'boots', icon: '🥾', def: 0.08, spd: 0.02, noise: 0.10, boots: '#5a4632',
+              desc: 'Рабочие сапоги. Уверенный шаг, немного защиты, много шума.' },
+  /* ===== РУКИ ===== */
+  gloves:   { name: 'Медицинские перчатки', slot: 'hands', icon: '🧤', atk: -0.10, noise: -0.05,
+              desc: 'Латексные перчатки. Пальцы быстрее — удары чаще.' },
+  grip:     { name: 'Тактические перчатки', slot: 'hands', icon: '🧤', atk: -0.15, def: 0.05,
+              desc: 'Перчатки с костяной защитой. И бить сподручнее, и держать крепче.' },
+  watch:    { name: 'Часы покойника',      slot: 'hands', icon: '⌚', san: -0.22,
+              desc: 'Часы, которые всё ещё идут. Тиканье держит тебя на поверхности.' },
+  charm:    { name: 'Талисман Тимки',      slot: 'hands', icon: '🧸', san: -0.35, def: 0.05,
+              desc: 'Маленький плюшевый медвежонок брата. Рядом с ним шёпот слабее.' },
+};
+const CLOTH_SLOTS = [
+  { id: 'body',  name: 'Тело' },
+  { id: 'head',  name: 'Голова' },
+  { id: 'boots', name: 'Обувь' },
+  { id: 'hands', name: 'Руки' },
+];
 
 /* ---------------- МИР ---------------- */
 const WORLD = { w: 6400, h: 2200 };
@@ -170,77 +262,77 @@ function decor(roomIdx, dx, kind) {
 const R0 = furnish(0, [
   { type: 'desk', loot: ['note:0', 'medkit'] },
   { type: 'gurney', loot: ['battery'] },
-  { type: 'nightstand', loot: ['pills', 'bottle'] },
-  { type: 'crate', loot: ['ammo:10'] },
+  { type: 'nightstand', loot: ['pills', 'bottle', 'wear:cap'] },
+  { type: 'crate', loot: ['ammo:10', 'wear:gloves'] },
 ], { pad: 130, gap: 62 });
 const R1 = furnish(1, [
   { type: 'locker', loot: ['knife', 'bottle'] },
-  { type: 'locker', loot: ['bottle', 'ammo:8'] },
+  { type: 'locker', loot: ['bottle', 'ammo:8', 'wear:mask'] },
   { type: 'locker', loot: ['trap'] },
-  { type: 'shelf', loot: ['pick', 'medkit'] },
+  { type: 'shelf', loot: ['pick', 'medkit', 'wear:orderly'] },
   { type: 'crate', loot: ['battery', 'pills'] },
 ]);
 const R2 = furnish(2, [
   { type: 'table', loot: ['note:1'] },
   { type: 'table', loot: ['bottle', 'bottle'] },
-  { type: 'table', loot: ['pills'] },
-  { type: 'shelf', loot: ['ammo:12', 'medkit'] },
+  { type: 'table', loot: ['pills', 'wear:sneakers'] },
+  { type: 'shelf', loot: ['ammo:12', 'medkit', 'crutch'] },
 ]);
 const R3 = furnish(3, [
   { type: 'fridge', loot: ['pistol', 'ammo:14'] },
   { type: 'fridge', loot: ['note:2'] },
   { type: 'gurney', loot: ['medkit', 'battery'] },
   { type: 'cabinet', loot: ['ammo:10', 'pills'] },
-  { type: 'fridge', loot: ['key_red', 'trap'] },
+  { type: 'fridge', loot: ['key_red', 'trap', 'mop'] },
 ], { pad: 80, gap: 54 });
 const R4 = furnish(4, [
   { type: 'shelf', loot: ['note:3', 'ammo:8'] },
   { type: 'shelf', loot: ['pills', 'bottle'] },
-  { type: 'cabinet', loot: ['medkit', 'battery'] },
+  { type: 'cabinet', loot: ['medkit', 'battery', 'wear:raincoat'] },
 ], { pad: 70, gap: 56 });
 const R5 = furnish(5, [
-  { type: 'crate', loot: ['battery', 'ammo:6'] },
+  { type: 'crate', loot: ['battery', 'ammo:6', 'wear:boots'] },
 ], { pad: 20, gap: 70 });
 const R6 = furnish(6, [
   { type: 'washer', loot: ['pills', 'pills'] },
   { type: 'washer', loot: ['medkit', 'bottle'] },
-  { type: 'washer', loot: ['ammo:12', 'ammo:12'] },
+  { type: 'washer', loot: ['ammo:12', 'ammo:12', 'wrench'] },
 ], { pad: 60, gap: 30 });
 const R7 = furnish(7, [
   { type: 'crate', loot: ['pills', 'bottle'] },
-  { type: 'locker', loot: ['ammo:10', 'medkit'] },
-], { pad: 150, gap: 80 });
+  { type: 'locker', loot: ['ammo:10', 'medkit', 'crowbar'] },
+], { pad: 200, gap: 80 });
 
 /* ================= 2 ЭТАЖ ================= */
 const R8 = furnish(8, [
   { type: 'nightstand', loot: ['note:4', 'pills'] },
   { type: 'gurney', loot: ['medkit'] },
-  { type: 'crate', loot: ['ammo:10'] },
+  { type: 'crate', loot: ['ammo:10', 'wear:hood', 'bat'] },
 ], { pad: 120, gap: 90 });
 const R9 = furnish(9, [
   { type: 'bed', loot: ['nothing'] },
   { type: 'nightstand', loot: ['note:5', 'battery'] },
   { type: 'bed', loot: ['medkit'] },
-  { type: 'cabinet', loot: ['ammo:12', 'pills'] },
-  { type: 'nightstand', loot: ['bottle'] },
+  { type: 'cabinet', loot: ['ammo:12', 'pills', 'pipe'] },
+  { type: 'nightstand', loot: ['bottle', 'wear:leather'] },
 ], { pad: 70, gap: 46 });
 const R10 = furnish(10, [
   { type: 'cabinet', loot: ['note:6', 'medkit'] },
-  { type: 'table', loot: ['bottle', 'bottle'] },
+  { type: 'table', loot: ['bottle', 'bottle', 'scalpel'] },
   { type: 'gurney', loot: ['battery', 'ammo:10'] },
-  { type: 'cabinet', loot: ['trap', 'pills'] },
+  { type: 'cabinet', loot: ['trap', 'pills', 'wear:surgical'] },
 ], { pad: 40, gap: 40 });
 const R11 = furnish(11, [
   { type: 'bed', loot: ['note:7'] },
   { type: 'nightstand', loot: ['pills', 'medkit'] },
   { type: 'bed', loot: ['trap'] },
-  { type: 'locker', loot: ['ammo:10', 'battery'] },
+  { type: 'locker', loot: ['ammo:10', 'battery', 'shocker'] },
 ], { pad: 70, gap: 52 });
 const R12 = furnish(12, [
-  { type: 'table', loot: ['medkit', 'bottle'] },
+  { type: 'table', loot: ['medkit', 'bottle', 'axe'] },
   { type: 'cabinet', loot: ['medkit', 'ammo:16'] },
   { type: 'gurney', loot: ['battery', 'pills'] },
-  { type: 'cabinet', loot: ['trap'] },
+  { type: 'cabinet', loot: ['trap', 'wear:grip'] },
 ], { pad: 60, gap: 46 });
 const R13 = furnish(13, [
   { type: 'crate', loot: ['bottle', 'ammo:12', 'battery'] },
@@ -248,7 +340,7 @@ const R13 = furnish(13, [
 const R14 = furnish(14, [
   { type: 'crib', loot: ['trap', 'pills'] },
   { type: 'crib', loot: ['trap'] },
-  { type: 'nightstand', loot: ['pills', 'medkit', 'ammo:12', 'battery'] },
+  { type: 'nightstand', loot: ['pills', 'medkit', 'ammo:12', 'battery', 'wear:charm'] },
 ], { pad: 60, gap: 42 });
 /* комната 15 — лестничная клетка: мебели нет, чтобы не загораживать пролёт */
 
@@ -256,19 +348,19 @@ const R14 = furnish(14, [
 /* комната 16 — тамбур: балки и решётка вентиляции, мебель не ставим */
 /* холл 3: мебель справа, шахта лифта и вентиляция свободны */
 const R17 = [
-  furnItem(ROOMS[17], 5720, 'crate', ['note:9', 'medkit']),
-  furnItem(ROOMS[17], 5830, 'nightstand', ['ammo:10', 'battery', 'pills']),
+  furnItem(ROOMS[17], 5720, 'crate', ['note:9', 'medkit', 'smg']),
+  furnItem(ROOMS[17], 5830, 'nightstand', ['ammo:10', 'battery', 'pills', 'wear:watch']),
 ];
 const R18 = furnish(18, [
-  { type: 'desk', loot: ['note:10', 'medkit'] },
-  { type: 'cabinet', loot: ['note:8', 'pills', 'battery'] },
-  { type: 'shelf', loot: ['ammo:12', 'bottle'] },
+  { type: 'desk', loot: ['note:10', 'medkit', 'revolver'] },
+  { type: 'cabinet', loot: ['note:8', 'pills', 'battery', 'wear:helmet'] },
+  { type: 'shelf', loot: ['ammo:12', 'bottle', 'shotgun'] },
   { type: 'table', loot: ['medkit', 'trap'] },
 ], { pad: 70, gap: 52 });
 const R19 = furnish(19, [
-  { type: 'desk', loot: ['medkit', 'pills'] },
-  { type: 'cabinet', loot: ['ammo:20', 'battery'] },
-  { type: 'shelf', loot: ['medkit', 'pills'] },
+  { type: 'desk', loot: ['medkit', 'pills', 'rifle'] },
+  { type: 'cabinet', loot: ['ammo:20', 'battery', 'nailgun'] },
+  { type: 'shelf', loot: ['medkit', 'pills', 'wear:kevlar'] },
 ], { pad: 110, gap: 60 });
 furnish(20, [
   { type: 'table', loot: ['note:11', 'pills'] },

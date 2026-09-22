@@ -32,6 +32,10 @@ function makeEl(id) {
     get firstChild() { return this.children[0]; },
     removeChild(c) { const i = this.children.indexOf(c); if (i >= 0) this.children.splice(i, 1); },
     remove() {},
+    querySelector: () => makeEl('q'),
+    querySelectorAll: () => [],
+    getElementsByTagName: () => [],
+    setAttribute() {}, getAttribute: () => null, focus() {}, blur() {},
     addEventListener() {}, removeEventListener() {},
     getContext: () => makeCtx(),
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 1280, height: 720 }),
@@ -91,7 +95,7 @@ const sandbox = {
   __log: msg => console.log(msg),
   __frames: (n, dt) => frames(n, dt),
   __key: (code, down) => key(code, down),
-  __mouse: st => { Object.assign(Input.mouse, st); },
+  __els: () => elements,
   __flushTimers: () => flushTimers(),
   __click: id => {
     const el = elements[id];

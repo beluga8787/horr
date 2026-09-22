@@ -30,6 +30,15 @@ function roundRect(c, x, y, w, h, r) {
   c.lineTo(x + r, y + h); c.quadraticCurveTo(x, y + h, x, y + h - r);
   c.lineTo(x, y + r); c.quadraticCurveTo(x, y, x + r, y); c.closePath();
 }
+/* затемнить/осветлить цвет '#rrggbb' — нужно для одежды Мишутки */
+function shade(hex, amt) {
+  if (typeof hex !== 'string' || hex[0] !== '#') return hex || '#888';
+  let h = hex.slice(1);
+  if (h.length === 3) h = h.split('').map(c => c + c).join('');
+  const n = parseInt(h, 16);
+  const r = clamp(((n >> 16) & 255) + amt, 0, 255), g = clamp(((n >> 8) & 255) + amt, 0, 255), b = clamp((n & 255) + amt, 0, 255);
+  return `rgb(${r | 0},${g | 0},${b | 0})`;
+}
 const angDiff = (a, b) => { let d = a - b; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return d; };
 
 /* ---------------- canvas ---------------- */
@@ -73,6 +82,11 @@ const Input = {
       if (e.button === 2) this.mouse.rdown = false;
     });
     canvas.addEventListener('contextmenu', e => e.preventDefault());
+    /* колесо мыши — перебор оружия (и прокрутка списка в инвентаре) */
+    canvas.addEventListener('wheel', e => {
+      e.preventDefault();
+      this.mouse.wheel = (e.deltaY > 0 ? 1 : e.deltaY < 0 ? -1 : this.mouse.wheel);
+    }, { passive: false });
     canvas.addEventListener('touchmove', e => {
       const t = e.changedTouches[0];
       const p = toGame(t.clientX, t.clientY);
@@ -124,7 +138,7 @@ const Input = {
     if (!this.touch[k]) this.touch['_p_' + k] = false;
     return false;
   },
-  endFrame() { this.pressed = {}; this.released = {}; this.mouse.clicked = false; this.mouse.dx = 0; this.mouse.dy = 0; }
+  endFrame() { this.pressed = {}; this.released = {}; this.mouse.clicked = false; this.mouse.dx = 0; this.mouse.dy = 0; this.mouse.wheel = 0; }
 };
 
 /* ---------------- камера ---------------- */

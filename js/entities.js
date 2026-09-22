@@ -11,8 +11,13 @@ class Player {
     this.vx = 0; this.vy = 0; this.face = 1; this.onGround = false; this.onSolidGround = false;
     this.floor = floor;
     this.hp = 100; this.maxhp = 100; this.st = 100; this.san = 100;
-    this.weapons = { hands: true, knife: false, pistol: false, pick: false };
-    this.cur = 'hands'; this.mag = 0; this.reserve = 0; this.magSize = 8;
+    this.weapons = {}; for (const id of ORDER) this.weapons[id] = false;
+    this.weapons.hands = true;
+    this.mags = {}; for (const id of ORDER) this.mags[id] = 0;
+    this.cur = 'hands'; this.mag = 0; this.reserve = 0;
+    this.clothes = { body: 'robe', head: null, boots: 'slippers', hands: null };
+    this.clothesOwned = { robe: true, slippers: true };
+    this.muzzleFX = 0; this.lastHitT = 0;
     this.medkits = 1; this.pills = 1; this.bottles = 1; this.batteries = 2;
     this.keys = {}; this.notes = [];
     this.atkCd = 0; this.atkAnim = 0; this.reloadT = 0; this.iframes = 0;
@@ -29,6 +34,75 @@ class Player {
   cx() { return this.x + this.w / 2; }
   cy() { return this.y + this.h / 2; }
   floorY() { return FLOORS[this.floor].y; }
+
+  /* ================= СНАРЯЖЕНИЕ ================= */
+  magOf(id) { return this.mags && this.mags[id] ? this.mags[id] : 0; }
+  setMag(id, v) { this.mags[id] = Math.max(0, v | 0); if (this.cur === id) this.mag = this.mags[id]; }
+  magSizeOf(id) { const w = WEAPONS[id]; return w && w.mag ? w.mag : 0; }
+  isGun(id) { const w = WEAPONS[id || this.cur]; return !!w && w.kind === 'gun'; }
+  clothItem(slot) { const id = this.clothes[slot]; return id ? CLOTHES[id] : null; }
+  sumStat(key) {
+    let v = 0;
+    for (const s of CLOTH_SLOTS) {
+      const it = this.clothItem(s.id);
+      if (it && it[key]) v += it[key];
+    }
+    return v;
+  }
+  defMul() { return clamp(1 - this.sumStat('def'), 0.3, 1); }
+  spdMul() { return clamp(1 + this.sumStat('spd'), 0.7, 1.6); }
+  sanMul() { return clamp(1 + this.sumStat('san'), 0.25, 1.7); }
+  noiseMul() { return clamp(1 + this.sumStat('noise'), 0.35, 2); }
+  atkMul() { return clamp(1 + this.sumStat('atk'), 0.45, 1.6); }
+  batteryMul() { return clamp(1 + this.sumStat('battery'), 0.35, 1.5); }
+  stealthMul() {
+    let m = 1;
+    for (const s of CLOTH_SLOTS) {
+      const it = this.clothItem(s.id);
+      if (it && it.stealth) m *= it.stealth;
+    }
+    return m;
+  }
+  wear(id) {
+    if (!CLOTHES[id]) return false;
+    this.clothesOwned[id] = true;
+    return this.equip(id);
+  }
+  equip(id) {
+    const it = CLOTHES[id];
+    if (!it || !this.clothesOwned[id]) return false;
+    this.clothes[it.slot] = id;
+    AudioSys.unlock();
+    return true;
+  }
+  unequip(slot) {
+    const it = CLOTH_SLOTS.find(s => s.id === slot);
+    if (!it) return false;
+    this.clothes[slot] = null;
+    AudioSys.uiClick();
+    return true;
+  }
+  switchTo(id) {
+    if (!WEAPONS[id] || !this.weapons[id]) return false;
+    if (this.cur === id) return true;
+    this.cur = id; this.reloadT = 0; this.mag = this.magOf(id);
+    this.atkCd = Math.max(this.atkCd, 0.12);
+    AudioSys.uiClick();
+    return true;
+  }
+  startReload(game) {
+    if (!this.isGun(this.cur) || this.reloadT > 0) return false;
+    if (this.magOf(this.cur) >= this.magSizeOf(this.cur)) return false;
+    if (this.reserve <= 0) {
+      AudioSys.dryfire();
+      if (game) game.toast('Патронов нет! Ищи обоймы в шкафах и морге', 'red');
+      return false;
+    }
+    const w = WEAPONS[this.cur];
+    this.reloadT = (w.reload || 1.15) * (this.atkMul() < 1 ? 1 : 1.15);
+    AudioSys.reload();
+    return true;
+  }
 
   /* фонарь — всегда в руке, точка привязана к телу */
   updateHand() {
@@ -97,7 +171,7 @@ class Player {
     /* ---------- ДВИЖЕНИЕ ---------- */
     const slow = this.slowT > 0 ? 0.55 : 1;
     const crowded = this.crouch ? 0.42 : 1;
-    const max = (run ? 415 : 262) * slow * crowded;
+    const max = (run ? 415 : 262) * slow * crowded * this.spdMul();
     const acc = this.onGround ? 3400 : 2200;
     if (!this.channel) {
       if (ax !== 0) { this.vx = clamp(this.vx + ax * acc * dt, -max, max); this.face = ax; }
@@ -130,7 +204,7 @@ class Player {
     /* фонарь */
     if (Input.pressed['KeyF']) this.toggleFlash(game, true);
     if (this.flashOn && this.battery > 0) {
-      this.battery = Math.max(0, this.battery - dt * 0.42);
+      this.battery = Math.max(0, this.battery - dt * 0.42 * this.batteryMul());
       if (this.battery <= 0) { this.flashOn = false; game.toast('🔋 Фонарь сел! Нужны батарейки [B]', 'red'); this.lightDip = 1; }
       else if (this.battery < 20 && Math.random() < dt * 1.6) this.lightDip = 1;
     }
@@ -140,18 +214,35 @@ class Player {
       game.toast(`🔋 Батарейка вставлена (осталось: ${this.batteries})`, 'gold');
       game.refreshHUD();
     }
-    /* оружие */
-    const numMap = { Digit1: 'hands', Digit2: 'knife', Digit3: 'pistol', Digit4: 'pick' };
-    for (const k in numMap) if (Input.pressed[k] && this.weapons[numMap[k]]) { this.cur = numMap[k]; this.reloadT = 0; AudioSys.uiClick(); game.refreshHUD(); }
-    /* перезарядка */
-    if ((Input.pressed['KeyR'] || (this.cur === 'pistol' && this.mag === 0 && Input.atkHit() && this.reserve > 0)) && this.reloadT <= 0) {
-      if (this.cur === 'pistol' && this.mag < this.magSize && this.reserve > 0) { this.reloadT = 1.1; AudioSys.reload(); }
+    /* оружие: цифры 1..9 — быстрое снаряжение, колесо мыши — перебор */
+    if (!this.mini && !this.channel) {
+      const fuseBusy = game.fuse && game.fuse.active && !game.fuse.solved;
+      if (!fuseBusy) {
+        const owned = ORDER.filter(id => this.weapons[id]);
+        for (let i = 0; i < 9; i++) {
+          if (Input.pressed['Digit' + (i + 1)] && owned[i] && this.cur !== owned[i]) {
+            this.switchTo(owned[i]); game.refreshHUD();
+          }
+        }
+        if (Input.mouse.wheel) {
+          const dir = Input.mouse.wheel > 0 ? 1 : -1;
+          let idx = owned.indexOf(this.cur);
+          if (idx < 0) idx = 0;
+          idx = (idx + dir + owned.length) % owned.length;
+          this.switchTo(owned[idx]); game.refreshHUD();
+          Input.mouse.wheel = 0;
+        }
+      }
     }
+    /* перезарядка */
+    if (Input.pressed['KeyR'] && this.reloadT <= 0) this.startReload(game);
     if (this.reloadT > 0) {
       this.reloadT -= dt;
       if (this.reloadT <= 0) {
-        const take = Math.min(this.magSize - this.mag, this.reserve);
-        this.mag += take; this.reserve -= take; game.refreshHUD();
+        const size = this.magSizeOf(this.cur);
+        const take = Math.min(size - this.magOf(this.cur), this.reserve);
+        if (take > 0) { this.setMag(this.cur, this.magOf(this.cur) + take); this.reserve -= take; }
+        game.refreshHUD();
       }
     }
     /* предметы */
@@ -166,7 +257,7 @@ class Player {
     /* рассудок */
     const ghostNear = game.ghostPressure(this.cx(), this.cy());
     if (this.lit > 0.55) this.san = clamp(this.san + (this.lampLit > 0.3 ? 5.5 : 1.6) * dt, 0, 100);
-    else this.san = clamp(this.san - (0.6 - this.lit) * 7 * dt - ghostNear * 5 * dt, 0, 100);
+    else this.san = clamp(this.san - ((0.6 - this.lit) * 7 * dt + ghostNear * 5 * dt) * this.sanMul(), 0, 100);
     if (this.san <= 0) this.takeDamage(2.5 * dt, game, 'mind');
     if (this.slowT > 0) this.slowT -= dt;
     if (this.iframes > 0) this.iframes -= dt;
@@ -177,7 +268,8 @@ class Player {
     const wasAir = !this.onGround;
     this.vy = Math.min(this.vy + 1900 * dt, 1150);
     game.moveAndCollide(this, dt, true);
-    this.floor = game.floorAtY(this.y + this.h);
+    /* этаж НЕ пересчитываем по высоте: иначе прыжок на высокой платформе
+       «телепортировал» Мишутку на этаж выше (см. game.floorAtY) */
     if (wasAir && this.onGround) {
       this.landT = 0.18; AudioSys.land();
       Particles.dust(this.cx(), this.y + this.h, 6);
@@ -192,12 +284,17 @@ class Player {
       if (this.stepT <= 0) { this.stepT = 0.34; AudioSys.step(run); if (run) Particles.dust(this.cx(), this.y + this.h, 2); }
       this.noise = Math.max(this.noise, run ? 0.5 : 0.2);
     } else this.walkT += dt * 2;
+    this.noise = clamp(this.noise * this.noiseMul(), 0, 1);
+    if (this.muzzleFX > 0) this.muzzleFX -= dt * 8;
   }
   keys_down_hold() { return true; }
   finishClimb(game) {
     const L = this.climbing; this.climbing = null;
     this.x = L.x + L.w / 2 - this.w / 2;
-    this.floor = game.floorAtY(this.y + this.h);
+    /* этаж — по уровню лестницы: поднялись к yTop — верхний этаж, спустились к yBot — нижний */
+    const feet = this.y + this.h;
+    this.floor = Math.abs(feet - L.yTop) <= Math.abs(feet - L.yBot) ? game.floorAtY(L.yTop) : game.floorAtY(L.yBot);
+    this.y = FLOORS[this.floor].y - this.h; this.vy = 0;
     game.toast('▚ ' + FLOORS[this.floor].name, '');
     game.refreshFloorHUD();
   }
@@ -248,13 +345,71 @@ class Player {
   takeDamage(amount, game, type = 'hit') {
     if (this.dead) return;
     if (type === 'hit' && this.iframes > 0) return;
-    if (type === 'hit') this.iframes = 0.7;
+    if (type === 'hit') { this.iframes = 0.7; amount *= this.defMul(); }
     this.hp -= amount; this.hurtT = 0.25;
     if (type === 'hit') {
       AudioSys.hurt(); Camera.shake(0.45); game.damageFlash();
       Particles.blood(this.cx(), this.cy(), 10);
     }
     if (this.hp <= 0 && !this.dead) { this.hp = 0; this.dead = true; game.onDeath(); }
+  }
+
+  /* ================= АТАКА ================= */
+  tryAttack(game) {
+    const w = WEAPONS[this.cur];
+    if (!w) return false;
+    if (this.st < w.stam * 0.5) {
+      game.toast('Мишутка задыхается — нужна секунда', 'red');
+      this.atkCd = 0.35;
+      return false;
+    }
+    return w.kind === 'gun' ? this.fireGun(game, w) : this.meleeSwing(game, w);
+  }
+  meleeSwing(game, w) {
+    this.st = clamp(this.st - w.stam, 0, 100);
+    this.atkCd = w.cd * this.atkMul();
+    this.atkAnim = 0.22;
+    this.noise = Math.max(this.noise, 0.4);
+    const dirx = this.face;
+    const reach = w.range;
+    const box = {
+      x: dirx > 0 ? this.x + this.w * 0.35 : this.x + this.w * 0.65 - reach,
+      y: this.y + (this.crouch ? 26 : 10),
+      w: reach, h: this.h - (this.crouch ? 30 : 16),
+    };
+    const hit = game.meleeHit(box, w.dmg, dirx, w);
+    game.effects.push({
+      kind: 'slash', x: this.cx() + dirx * 18, y: this.cy() - 4,
+      face: dirx, r: reach * 0.8, t: 0, dur: hit ? 0.18 : 0.13,
+      color: hit ? '#ffdada' : '#cfd8e0', heavy: w.dmg >= 45 ? 1 : 0,
+    });
+    if (hit) { this.lastHitT = 0.2; this.recoil = Math.min(1, this.recoil + 0.25); }
+    else AudioSys.swing();
+    if (w.stunGhosts && hit) {
+      for (const g of game.ghosts) if (!g.dead && dist(g.cx(), g.cy(), this.cx(), this.cy()) < reach + 30) {
+        Particles.spark(g.cx(), g.cy(), 12, '#8adfff');
+      }
+    }
+    game.refreshHUD();
+    return true;
+  }
+  fireGun(game, w) {
+    if (this.reloadT > 0) return false;
+    if (this.magOf(this.cur) <= 0) {
+      if (!this.startReload(game)) { this.atkCd = 0.28; AudioSys.dryfire(); }
+      return false;
+    }
+    this.setMag(this.cur, this.magOf(this.cur) - 1);
+    this.atkCd = w.cd * this.atkMul();
+    this.atkAnim = 0.18; this.recoil = 1; this.muzzleFX = 1;
+    const bx = this.handX + Math.cos(this.aim) * 16;
+    const by = this.handY + Math.sin(this.aim) * 8;
+    game.shoot(w, bx, by, this.aim);
+    game.muzzleT = 0.07;
+    game.addNoise(this.cx(), this.cy(), w.noise || 900);
+    Camera.shake(w.pellets ? 0.5 : 0.28);
+    game.refreshHUD();
+    return true;
   }
 
   /* ---------- мини-игры (тянуть мышью) ---------- */
@@ -324,6 +479,90 @@ class Player {
   }
 
   /* ---------- ОТРИСОВКА ---------- */
+  /* ---------- отрисовка оружия в руке (18 видов, по типу) ---------- */
+  drawWeaponShape(c, t, _fn) {
+    const id = this.cur, w = WEAPONS[id] || WEAPONS.hands;
+    const cGlove = CLOTHES[this.clothes.hands] || null;
+    const skinCol = cGlove && this.clothes.hands !== 'charm' ? '#c9d2d8' : '#d8b89a';
+    const shape = w.shape || 'fist';
+    const flashK = clamp(this.muzzleFX || 0, 0, 1);
+    const swingK = this.atkAnim > 0 ? 1 - this.atkAnim / 0.22 : -1;
+    if (shape === 'gun' || shape === 'gun_long') {
+      const long = shape === 'gun_long';
+      const len = long ? 30 : 19;
+      const barrel = WEAPONS[id] || {};
+      c.fillStyle = '#22262b'; c.fillRect(0, -3.2, len, long ? 6.4 : 6.6);
+      c.fillStyle = '#3a3f45'; c.fillRect(3, 2.6, 6, 8);
+      c.fillStyle = '#111'; c.fillRect(len - 3, -2, 4, 4);
+      c.fillStyle = '#4a3220';
+      c.fillRect(long ? -8 : -6, -2.4, 8, 6);
+      if (long) { c.fillStyle = '#2b3138'; c.fillRect(10, -5, 13, 3); }
+      /* гильза/барабан/магазин */
+      if (id === 'revolver') { c.beginPath(); c.fillStyle = '#5a6068'; c.arc(6, 0, 4.6, 0, 7); c.fill(); c.fillStyle = '#2a2a2a'; for (let i = 0; i < 6; i++) { const a = i / 6 * 6.28; c.fillRect(6 + Math.cos(a) * 3 - 1, Math.sin(a) * 3 - 1, 2, 2); } }
+      else if (id === 'smg') { c.fillStyle = '#2a2f36'; c.fillRect(6, 6, 7, 10); c.fillStyle = '#5a6068'; c.fillRect(len - 8, -6, 8, 3); }
+      else c.fillStyle = '#2f342f'; c.fillRect(4, 6, 7, 9);
+      /* вспышка */
+      if (flashK > 0) {
+        c.save(); c.globalAlpha = flashK;
+        c.fillStyle = '#fff6d8'; c.shadowBlur = 22; c.shadowColor = '#ffb13c';
+        c.beginPath(); c.moveTo(len, -5 - flashK * 3); c.lineTo(len + 14 + flashK * 16, 0); c.lineTo(len, 5 + flashK * 3); c.closePath(); c.fill();
+        c.beginPath(); c.arc(len + 3, 0, 4 + flashK * 4, 0, 7); c.fill();
+        c.restore();
+      } else { c.fillStyle = '#555'; c.fillRect(len - 4, -1.6, 3, 3.2); }
+    } else if (shape === 'fist') {
+      c.fillStyle = skinCol;
+      c.beginPath(); c.ellipse(3 + swingK * 3, swingK * 2, 6.5, 5.6, 0, 0, 7); c.fill();
+      c.fillStyle = 'rgba(0,0,0,0.18)'; c.fillRect(0, -3, 2, 6);
+    } else if (shape === 'blade') {
+      const big = id === 'axe';
+      c.fillStyle = '#4a3220'; c.fillRect(-2, -3, 9, 6);
+      c.fillStyle = '#9aa6ae'; c.fillRect(6, -2.2, 4, 4.4);
+      if (big) {
+        c.fillStyle = '#c9d2d8';
+        c.beginPath(); c.moveTo(9, -2); c.lineTo(20, -13); c.lineTo(27, -6); c.lineTo(20, 6); c.lineTo(9, 2); c.closePath(); c.fill();
+        c.fillStyle = '#a31621'; c.fillRect(18, -8, 6, 12);
+      } else {
+        c.fillStyle = '#c9d2d8';
+        c.beginPath(); c.moveTo(9, -2.6); c.lineTo(id === 'scalpel' ? 22 : 24, -1.2); c.lineTo(id === 'scalpel' ? 22 : 24, 1.2); c.lineTo(9, 2.6); c.closePath(); c.fill();
+        c.strokeStyle = '#fff'; c.lineWidth = 0.9; c.beginPath(); c.moveTo(10, -0.6); c.lineTo(22, -0.2); c.stroke();
+        c.fillStyle = 'rgba(163,22,33,0.75)'; c.fillRect(12, -1.4, 6, 2.8);
+      }
+    } else if (shape === 'long') {
+      const wood = id === 'mop' || id === 'crutch';
+      c.save(); c.rotate(-0.06);
+      c.fillStyle = wood ? (id === 'crutch' ? '#b9a06a' : '#8a6a3a') : '#8a8f96';
+      c.fillRect(-14, -2, 40, 4);
+      if (id === 'mop') { c.fillStyle = '#cfc0a0'; c.fillRect(26, -6, 6, 12); c.fillStyle = '#7a6a4a'; c.fillRect(32, -7, 4, 14); }
+      else if (id === 'crutch') { c.fillStyle = '#d8c8a0'; c.fillRect(22, -8, 5, 16); c.fillStyle = '#8a7a5a'; c.fillRect(-16, -6, 5, 12); }
+      else if (id === 'bat') { c.fillStyle = '#b58a5a'; c.beginPath(); c.ellipse(24, 0, 9, 5, 0, 0, 7); c.fill(); c.fillStyle = '#5a3a22'; c.fillRect(2, -2.4, 8, 4.8); }
+      else { c.fillStyle = '#6d737a'; c.fillRect(-14, -2.6, 6, 5.2); }
+      c.restore();
+    } else if (shape === 'tool') {
+      if (id === 'pick') {
+        c.strokeStyle = '#c8c8c8'; c.lineWidth = 2.4;
+        c.beginPath(); c.moveTo(2, 0); c.lineTo(16, -8); c.stroke();
+        c.beginPath(); c.ellipse(18, -9, 4, 2.6, -0.5, 0, 7); c.stroke();
+        if (this.atkAnim > 0) { c.strokeStyle = '#fff8c8'; c.lineWidth = 2; c.beginPath(); c.arc(18, -9, 7, 0, 7); c.stroke(); }
+      } else if (id === 'wrench') {
+        c.fillStyle = '#9aa2a8'; c.fillRect(-4, -2.6, 18, 5.2);
+        c.strokeStyle = '#c9d2d8'; c.lineWidth = 3; c.beginPath(); c.arc(16, 0, 5, 0.6, 5.6); c.stroke();
+      } else if (id === 'crowbar') {
+        c.strokeStyle = '#a31621'; c.lineWidth = 4; c.lineCap = 'round';
+        c.beginPath(); c.moveTo(-6, 3); c.lineTo(16, -3); c.stroke();
+        c.beginPath(); c.arc(18, -4, 4, 1.2, 4.6); c.stroke();
+      } else if (id === 'shocker') {
+        c.fillStyle = '#2a3040'; c.fillRect(-2, -3.4, 13, 7);
+        c.fillStyle = '#ffd166'; c.fillRect(9, -2.4, 3, 4.8);
+        c.strokeStyle = '#8adfff'; c.lineWidth = 1.6;
+        if (this.atkAnim > 0) { for (let i = 0; i < 3; i++) { c.beginPath(); c.moveTo(12, -3 + i * 3); c.lineTo(19 + (i % 2) * 4, -1 + i * 2); c.lineTo(15 + (i % 2) * 6, 3 + i); c.stroke(); } }
+      } else if (id === 'nailgun') {
+        c.fillStyle = '#c8a02a'; c.fillRect(-2, -3, 16, 7);
+        c.fillStyle = '#3a3f45'; c.fillRect(12, -1.6, 8, 3.2);
+        c.fillStyle = '#5a6068'; c.fillRect(0, 4, 6, 6);
+        if (flashK > 0) { c.fillStyle = '#fff6d8'; c.beginPath(); c.arc(20, 0, 3 + flashK * 3, 0, 7); c.fill(); }
+      }
+    }
+  }
   draw(c) {
     if (this.hidden) { return; } // рисуется шкафом
     if (this.dead) {
@@ -349,13 +588,21 @@ class Player {
     c.translate(cx, this.y + (crouchK ? 18 : 0) + land * 7);
     c.scale(f, squash);
     const H = this.h - (crouchK ? 18 : 0);
+    /* --- цвета одежды --- */
+    const cBody = CLOTHES[this.clothes.body] || null, cBoot = CLOTHES[this.clothes.boots] || null;
+    const cGlove = CLOTHES[this.clothes.hands] || null;
+    const legsCol = cBody && cBody.legs ? cBody.legs : '#4a5a66';
+    const legsCol2 = shade(legsCol, -18);
+    const torsCol = cBody && cBody.torso ? cBody.torso : '#7d94a0';
+    const bootCol = cBoot && cBoot.boots ? cBoot.boots : '#6b5d4f';
+    const skinCol = cGlove && cGlove.slot === 'hands' && this.clothes.hands !== 'charm' ? '#c9d2d8' : '#d8b89a';
     /* ноги */
     const swing = climbK ? Math.sin(t * 7) * 8 : sw * 11;
     for (const s of [-1, 1]) {
       const off = s > 0 ? swing : -swing;
       const legX = -7 + s * 2 + (airK ? s * 5 : 0) + (crouchK ? s * 2 : 0);
       const knee = Math.max(0, off) * 0.5;
-      c.fillStyle = s > 0 ? '#4a5a66' : '#3d4c55';
+      c.fillStyle = s > 0 ? legsCol : legsCol2;
       c.beginPath();
       c.moveTo(legX, 32); c.lineTo(legX + 10, 32);
       c.lineTo(legX + 8 + off * 0.5, 32 + 16 - knee);
@@ -363,25 +610,49 @@ class Player {
       c.lineTo(legX + off, 32 + 26 - knee * 1.3);
       c.lineTo(legX + 2 + off * 0.5, 32 + 16 - knee);
       c.closePath(); c.fill();
+      if (cBody && (cBody.id === 'kevlar' || cBody.def >= 0.2)) { c.fillStyle = 'rgba(255,255,255,0.10)'; c.fillRect(legX + 1, 34, 9, 24); }
       c.fillStyle = 'rgba(225,225,225,0.22)';
       for (let i = 0; i < 3; i++) c.fillRect(legX + 1, 35 + i * 7, 8, 2);
-      c.fillStyle = '#6b5d4f';
+      c.fillStyle = bootCol;
       c.fillRect(legX - 2 + off, 56 - knee * 1.3, 15, 7);
+      c.fillStyle = 'rgba(0,0,0,0.25)';
+      c.fillRect(legX - 2 + off, 62 - knee * 1.3, 15, 2);
     }
     /* торс */
     const bob = Math.abs(sw) * 2 + Math.sin(t * 2.4) * 0.8;
-    c.fillStyle = '#7d94a0';
+    c.fillStyle = torsCol;
     c.beginPath();
     c.moveTo(-9, 20 + bob * 0.3); c.lineTo(9, 20 + lean * 0.4);
     c.lineTo(11 + lean * 0.3, 42); c.lineTo(-11, 42); c.closePath(); c.fill();
-    c.fillStyle = '#6a828e'; c.fillRect(-9, 20 + bob * 0.3, 4, 22);
+    c.fillStyle = shade(torsCol, -16); c.fillRect(-9, 20 + bob * 0.3, 4, 22);
     c.fillStyle = 'rgba(255,255,255,0.08)'; c.fillRect(-9, 26, 20, 6);
     c.fillStyle = '#5c0a12';
     c.beginPath(); c.ellipse(2, 34 + bob, 4, 6, 0.3, 0, 7); c.fill();
-    c.save(); c.translate(-9, 30); c.scale(f, 1); c.fillStyle = '#e8dcc8'; c.font = '700 7px sans-serif'; c.fillText('№12', 0, 0); c.restore();
-    /* задняя рука */
-    c.strokeStyle = '#d8b89a'; c.lineWidth = 6; c.lineCap = 'round';
+    if (cBody && cBody.id === 'kevlar') {
+      c.fillStyle = '#2f3a2c'; c.fillRect(-11, 22, 22, 20);
+      c.fillStyle = '#3d4a3a'; c.fillRect(-11, 22, 22, 6);
+      c.fillStyle = '#c8b060'; c.fillRect(-7, 26, 14, 3);
+    } else if (cBody && cBody.id === 'surgical') {
+      c.fillStyle = 'rgba(255,255,255,0.5)'; c.fillRect(-9, 20, 20, 3);
+    } else if (cBody && cBody.id === 'raincoat') {
+      c.fillStyle = 'rgba(255,255,255,0.12)'; c.fillRect(-11, 30, 22, 4); c.fillRect(-11, 38, 22, 4);
+    }
+    c.save(); c.translate(-9 * (f > 0 ? 1 : -1) - (f > 0 ? 0 : 9), 30); c.scale(f, 1); c.fillStyle = '#e8dcc8'; c.font = '700 7px sans-serif'; c.fillText('№12', 0, 0); c.restore();
+    /* задняя рука + ФОНАРЬ (всегда в руке Мишутки, не отдельно) */
+    c.strokeStyle = skinCol; c.lineWidth = 6; c.lineCap = 'round';
     c.beginPath(); c.moveTo(-4, 24); c.lineTo(-12, 34 - sw * 8); c.stroke();
+    {
+      const lx = -13, ly = 34 - sw * 8;
+      const on = this.flashOn && this.battery > 0;
+      const dim = this.battery < 22 ? (0.45 + Math.sin(t * 22) * 0.35) : 1;
+      c.save(); c.translate(lx, ly);
+      c.fillStyle = '#8a8f96'; c.fillRect(-7, -3.5, 13, 7);
+      c.fillStyle = '#3c4046'; c.fillRect(-10, -3, 4, 6);
+      c.fillStyle = on ? `rgba(255,246,216,${dim})` : '#454a50';
+      c.beginPath(); c.arc(7, 0.5, 3.6, 0, 7); c.fill();
+      if (on) { c.shadowBlur = 16 * dim; c.shadowColor = '#ffe9b0'; c.beginPath(); c.arc(7, 0.5, 2.4, 0, 7); c.fill(); c.shadowBlur = 0; }
+      c.restore();
+    }
     /* голова */
     const hy = 10 + bob * 0.5 + (crouchK ? 2 : 0);
     c.fillStyle = '#d8b89a';
@@ -414,41 +685,16 @@ class Player {
     /* передняя рука + фонарь/оружие */
     const shx = cx + f * 6, shy = this.y + (crouchK ? 18 : 0) + 26 - land * 7;
     c.save();
-    c.strokeStyle = '#7d94a0'; c.lineWidth = 7; c.lineCap = 'round';
+    c.strokeStyle = cGlove && this.clothes.hands ? (cGlove.torso || '#5a5f66') : torsCol; c.lineWidth = 7; c.lineCap = 'round';
     c.beginPath(); c.moveTo(shx, shy); c.lineTo(lerp(shx, this.handX, 0.45), lerp(shy, this.handY, 0.45)); c.stroke();
-    c.strokeStyle = '#d8b89a'; c.lineWidth = 6;
+    c.strokeStyle = skinCol; c.lineWidth = 6;
     c.beginPath(); c.moveTo(lerp(shx, this.handX, 0.4), lerp(shy, this.handY, 0.4)); c.lineTo(this.handX, this.handY); c.stroke();
     const rec = -this.recoil * 7;
     c.translate(this.handX + Math.cos(this.aim) * rec, this.handY + Math.sin(this.aim) * rec);
     c.rotate(this.aim); c.scale(1, f);
-    c.fillStyle = '#d8b89a'; c.beginPath(); c.arc(0, 0, 4.5, 0, 7); c.fill();
-    if (this.cur === 'pistol') {
-      c.fillStyle = '#22262b'; c.fillRect(0, -3, 20, 7);
-      c.fillStyle = '#3a3f45'; c.fillRect(4, 3, 6, 8);
-      c.fillStyle = '#111'; c.fillRect(17, -2, 4, 4);
-      c.fillStyle = '#c8a02a'; c.fillRect(0, 5, 13, 6);
-      c.fillStyle = '#2a2a2a'; c.fillRect(2, 5, 3, 6); c.fillRect(8, 5, 3, 6);
-      c.fillStyle = this.flashOn ? '#fff6d8' : '#555'; c.fillRect(13, 5.5, 3, 5);
-    } else {
-      c.fillStyle = '#8a8f96'; c.fillRect(-2, -3, 16, 7);
-      c.fillStyle = '#3c4046'; c.fillRect(-6, -2.5, 5, 6);
-      const on = this.flashOn && this.battery > 0;
-      const dim = this.battery < 22 ? (0.45 + Math.sin(t * 22) * 0.35) : 1;
-      c.fillStyle = on ? `rgba(255,246,216,${dim})` : '#444';
-      c.beginPath(); c.arc(15, 0.5, 4, 0, 7); c.fill();
-      if (on) { c.shadowBlur = 20 * dim; c.shadowColor = '#ffe9b0'; c.fillRect(14, -2, 3, 5); c.shadowBlur = 0; }
-      if (this.cur === 'knife') {
-        c.fillStyle = '#c9d2d8'; c.fillRect(2, -14, 4, 13);
-        c.fillStyle = '#4a3220'; c.fillRect(1, -4, 6, 6);
-        c.strokeStyle = '#fff'; c.lineWidth = 1; c.beginPath(); c.moveTo(3, -13); c.lineTo(3, -3); c.stroke();
-        c.fillStyle = 'rgba(163,22,33,0.7)'; c.fillRect(2, -13, 4, 4);
-      } else if (this.cur === 'pick') {
-        c.strokeStyle = '#c8c8c8'; c.lineWidth = 2.4;
-        c.beginPath(); c.moveTo(2, 0); c.lineTo(16, -8); c.stroke();
-        c.beginPath(); c.ellipse(18, -9, 4, 2.6, -0.5, 0, 7); c.stroke();
-        if (this.atkAnim > 0) { c.strokeStyle = '#fff8c8'; c.lineWidth = 2; c.beginPath(); c.arc(18, -9, 7, 0, 7); c.stroke(); }
-      } else { c.fillStyle = '#c9a184'; c.fillRect(2, -5, 7, 9); }
-    }
+    /* ладонь */
+    c.fillStyle = skinCol; c.beginPath(); c.arc(0, 0, 4.5, 0, 7); c.fill();
+    this.drawWeaponShape(c, t, on2 => on2);
     c.restore();
     /* взмах */
     if (this.atkAnim > 0 && this.cur !== 'pistol') {
@@ -562,13 +808,23 @@ class EnemyBase {
       this.vy = -620;
       if (this.stuckCount >= 2) {
         this.stuckCount = 0;
-        // фазовый рывок: телепорт ближе к цели (только если далеко)
-        if (Math.abs(dx) > 240 && !opts.noPhase) {
-          const nx = clamp(tx + (Math.random() < 0.5 ? -1 : 1) * rand(140, 260), 30, WORLD.w - 60);
-          Particles.soul(this.cx(), this.cy(), 12);
-          this.x = nx; this.y = FLOORS[this.floor].y - this.h - 4;
-          Particles.soul(this.cx(), this.cy(), 12);
-          AudioSys.whisper();
+        /* фазовый шаг: тварь «просачивается» к цели, но НЕ сквозь стену и не в мебель,
+           и никогда не прыгает сквозь перекрытие/этаж */
+        if (Math.abs(dx) > 200 && !opts.noPhase) {
+          const dir = sign(dx) || this.face;
+          let nx = this.x;
+          for (let step = 12; step <= 110; step += 12) {
+            const cand = this.x + dir * step;
+            if (game.solidAt(cand + 3, this.y + this.h - 14, this.w - 6, 10)) break;
+            nx = cand;
+          }
+          if (Math.abs(nx - this.x) > 6) {
+            Particles.soul(this.cx(), this.cy(), 10);
+            this.x = clamp(nx, 30, WORLD.w - 60);
+            this.y = FLOORS[this.floor].y - this.h - 2;
+            Particles.soul(this.cx(), this.cy(), 10);
+            AudioSys.whisper();
+          }
         }
       }
     }
@@ -654,6 +910,18 @@ class Ghost extends EnemyBase {
   update(dt, game) {
     this.animT += dt; this.phase += dt;
     if (this.hitT > 0) this.hitT -= dt;
+    /* кровотечение от ножа/скальпеля */
+    if (this.bleedT > 0 && !this.dead) {
+      this.bleedT -= dt;
+      this.hp -= this.bleed * dt;
+      if (Math.random() < dt * 5) Particles.ichor(this.cx(), this.cy(), 1);
+      if (this.hp <= 0 && !this.dead) {
+        this.dead = true; this.dieT = 0.5; this.hp = 0;
+        AudioSys.ghostDie(); Particles.soul(this.cx(), this.cy(), 22);
+        game.onGhostKilled(this);
+        return false;
+      }
+    }
     if (this.touchCd > 0) this.touchCd -= dt;
     if (this.attackCd > 0) this.attackCd -= dt;
     if (this.stunT > 0) this.stunT -= dt;

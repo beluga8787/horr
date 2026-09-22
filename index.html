@@ -38,6 +38,7 @@
       <div id="hand-text"><div id="hand-name">Руки</div><div id="hand-ammo"></div></div>
     </div>
     <div id="notes-counter" title="Найденные записки">📄 <b id="notes-num">0/12</b></div>
+    <button id="inv-btn" title="Инвентарь: персонаж, одежда, арсенал (I)">🎒 <b id="inv-count">0</b></button>
     <div id="objective"></div>
     <div id="boss-bar" class="hidden">
       <div id="boss-name">☠ ГЛАВВРАЧ ТАМИК ☠</div>
@@ -60,6 +61,29 @@
     </div>
   </div>
 
+  <!-- ============ ИНВЕНТАРЬ ============ -->
+  <div id="inv-modal" class="hidden">
+    <div id="inv-box">
+      <div id="inv-head">
+        <h2>🎒 ИНВЕНТАРЬ МИШУТКИ</h2>
+        <div id="inv-sum"></div>
+        <button id="inv-close" class="mbtn small">Закрыть [I]</button>
+      </div>
+      <div id="inv-body">
+        <div id="inv-left">
+          <canvas id="inv-char" width="240" height="380"></canvas>
+          <div id="inv-left-hint">Клик по одежде — надеть. Клик по оружию — взять в руки.</div>
+        </div>
+        <div id="inv-right">
+          <div class="inv-sec"><h3>НАДЕТО</h3><div id="inv-slots"></div></div>
+          <div class="inv-sec"><h3>ГАРДЕРОБ</h3><div id="inv-wardrobe"></div></div>
+          <div class="inv-sec"><h3>АРСЕНАЛ</h3><div id="inv-weapons"></div></div>
+          <div class="inv-sec"><h3>ПРИПАСЫ И КЛЮЧИ</h3><div id="inv-items"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ============ ТИТУЛ ============ -->
   <div id="title-screen">
     <div class="fog f1"></div><div class="fog f2"></div><div class="fog f3"></div>
@@ -70,6 +94,7 @@
       <h1 id="game-title">МИШУТКА</h1>
       <h2>ПРОТОКОЛ «ТИШИНА»</h2>
       <p class="tagline">2D хоррор-платформер • найди записки • вспомни • выживи</p>
+      <p class="tagline">18 видов оружия • 17 видов одежды • БОЛЬШОЙ ИНВЕНТАРЬ [I]</p>
       <div id="menu">
         <button id="btn-new" class="mbtn">🕯&nbsp; Новая игра</button>
         <button id="btn-continue" class="mbtn hidden">▶&nbsp; Продолжить</button>
@@ -116,9 +141,10 @@
         <span><b>F</b></span><span>вкл/выкл фонарь</span>
         <span><b>H</b></span><span>спрятаться в шкаф (E — вылезти)</span>
         <span><b>G</b></span><span>бросить бутылку — отвлечь тварей</span>
-        <span><b>1 / 2 / 3 / 4</b></span><span>руки / нож / пистолет / затычка</span>
+        <span><b>1 – 9</b> и <b>колесо мыши</b></span><span>быстрая смена оружия</span>
+        <span><b>I / Tab</b></span><span>БОЛЬШОЙ ИНВЕНТАРЬ: персонаж, одежда, арсенал</span>
         <span><b>1–5 в щитке</b></span><span>рубильники (порядок 3-1-4)</span>
-        <span><b>R</b></span><span>перезарядить пистолет</span>
+        <span><b>R</b></span><span>перезарядить оружие</span>
         <span><b>Q / T / B</b></span><span>аптечка / пилюли / батарейка в фонарь</span>
         <span><b>Esc / P</b></span><span>пауза, <b>M</b> — звук</span>
       </div>
@@ -130,6 +156,7 @@
       3 этаж — чердак, рентген, ординаторская Тамика, зал «Тишина». Лифт и лестницы соединяют этажи.<br>
       <b>Три пса Тамика</b> (мини-боссы): <b>Санитар-Мясник</b> (морг) — ключ-карта лифта, <b>Сестра Милосердия</b> (процедурная) — ключ от чердака, <b>Хирург без лица</b> (операционная) — ключ ординаторской.<br>
       <b>Затычка</b> открывает замки, решётки вентиляции и щиток — и ею можно <b>ЗАТКНУТЬ дверь</b> за собой: твари будут грызть её, пока ты уходишь.<br>
+      <b>Одежда и арсенал:</b> в шкафах, тумбочках и холодильниках лежит <b>18 видов оружия</b> (нож, скальпель, швабра, костыль, труба, бита, топор, шокер, монтировка, гвоздомёт, револьвер, дробовик, карабин, ПП…) и <b>17 видов одежды</b> (роба, халат, кевлар, дождевик, каска, капюшон, перчатки, талисман…). Открой <b>инвентарь [I]</b>: там Мишутка во весь рост, на нём видно всё надетое, а бонусы (защита, скорость, рассудок, шум) считаются по одежде.<br>
       <b>Свет — жизнь:</b> подсвеченные твари получают больше урона, во тьме рассудок тает. Батарейки в фонаре кончаются — ищи новые [B].<br>
       <b>Прячься</b> в шкафах [H], <b>бросай бутылки</b> [G], чтобы увести их от себя.</p>
       <button id="help-close" class="mbtn">Понятно</button>

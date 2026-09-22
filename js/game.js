@@ -20,7 +20,7 @@ const Game = {
   deathT: 0, winT: 0, titleT: 0, crawlT: 0, endingType: null,
   seenRooms: {}, jumpScareT: 0, jumpScareKind: null, musicBoss: null, heartT: 0,
 
-  modalOpen() { return this.noteId !== null; },
+  modalOpen() { return this.noteId !== null || !!this.invOpen; },
   /* защита от падения кадра: пишем в консоль и продолжаем */
   reportError(where, e) {
     this.errCount = (this.errCount || 0) + 1;
@@ -33,6 +33,7 @@ const Game = {
     Input.init();
     this.buildWorld();
     this.player = new Player(PLAYER_START.x, PLAYER_START.y, 0);
+    this.player.x = this.freeSpot(this.player.cx(), 0, this.player.w, this.player.h, 20, WORLD.w - 20) - this.player.w / 2;
     Camera.reset(this.player.cx(), this.player.cy());
     this.bindUI();
     window.addEventListener('pointerdown', () => AudioSys.init());
@@ -61,7 +62,11 @@ const Game = {
     this.power = false; this.elevatorCard = false;
     this.bossStarted = false; this.bossDead = false;
     this.seenRooms = {}; this.endingType = null;
+    this.invOpen = false; this.invSel = null;
     this.rebuildSolids();
+    /* ни одна тварь не должна застрять в мебели на старте (мебель уже в solids) */
+    for (const g of this.ghosts) g.x = this.freeSpot(g.x, g.floor, g.w, g.h, g.leash[0], g.leash[1]);
+    for (const m of this.minibosses) m.x = this.freeSpot(m.x, m.floor, m.w, m.h, m.leash[0], m.leash[1]);
     Particles.clear(); Floaters.clear();
     const r = mulberry32(4242);
     this.fog = [];
@@ -77,12 +82,17 @@ const Game = {
     for (const g of this.gates) this.solids.push(g);
   },
   /* --- запросы по миру --- */
+  /* Этаж по высоте = БЛИЖАЙШИЙ пол. Используется лестницами, тварями и скриптами.
+     Раньше здесь был порог «45% высоты этажа» — из-за него прыжок на высокой платформе
+     выбрасывал игрока на этаж выше. Игрок этаж по высоте больше не меняет вообще:
+     только лестница, лифт, вентиляция и спуск по трубе. */
   floorAtY(y) {
-    for (let i = 0; i < FLOORS.length - 1; i++) {
-      const gap = FLOORS[i].y - FLOORS[i + 1].y;
-      if (y > FLOORS[i + 1].y + gap * 0.45) return i;
+    let best = 0, bd = Infinity;
+    for (let i = 0; i < FLOORS.length; i++) {
+      const d = Math.abs(y - FLOORS[i].y);
+      if (d < bd) { bd = d; best = i; }
     }
-    return 2;
+    return best;
   },
   solidAt(x, y, w = 4, h = 4) {
     const b = { x, y, w, h };
@@ -268,6 +278,9 @@ const Game = {
     $('btn-again').onclick = () => { AudioSys.uiClick(); this.newGame(false); };
     $('btn-win-title').onclick = () => { AudioSys.uiClick(); this.toTitle(); };
     $('mute-btn').onclick = () => { AudioSys.init(); AudioSys.toggleMute(); this.syncMuteBtn(); };
+    $('inv-btn').onclick = () => { AudioSys.init(); AudioSys.uiClick(); this.toggleInventory(); };
+    $('inv-close').onclick = () => this.closeInventory();
+    $('inv-modal').addEventListener('click', e => { if (e.target.id === 'inv-modal') this.closeInventory(); });
     $('cs-next').onclick = () => this.csNext();
     $('cs-skip').onclick = () => this.csSkip();
     $('title-screen').addEventListener('mousemove', e => {
@@ -312,8 +325,9 @@ const Game = {
     if (this.bossStarted && !this.bossDead) return;
     const p = this.player;
     const data = {
-      v: 2, px: p.x, py: p.y, floor: p.floor, hp: p.hp, st: p.st, san: p.san, cur: p.cur,
-      weapons: p.weapons, mag: p.mag, reserve: p.reserve, medkits: p.medkits, pills: p.pills,
+      v: 3, px: p.x, py: p.y, floor: p.floor, hp: p.hp, st: p.st, san: p.san, cur: p.cur,
+      weapons: p.weapons, mags: p.mags, clothes: p.clothes, wardrobe: p.clothesOwned,
+      mag: p.mag, reserve: p.reserve, medkits: p.medkits, pills: p.pills,
       bottles: p.bottles, batteries: p.batteries, battery: p.battery, flashOn: p.flashOn,
       keys: p.keys, notes: p.notes, time: this.playTime, kills: p.kills,
       openedF: this.furniture.filter(f => f.opened).map(f => f.id),
@@ -332,15 +346,26 @@ const Game = {
   loadGame() {
     let d = null;
     try { d = JSON.parse(localStorage.getItem(SAVE_KEY)); } catch (e) { /* ignore */ }
-    if (!d || d.v !== 2) { this.newGame(true); return; }
+    if (!d || (d.v !== 2 && d.v !== 3)) { this.newGame(true); return; }
     this.buildWorld();
     this.player = new Player(d.px, d.py, d.floor || 0);
+    this.player.x = this.freeSpot(this.player.cx(), this.player.floor, this.player.w, this.player.h, 20, WORLD.w - 20) - this.player.w / 2;
     Object.assign(this.player, {
-      hp: d.hp, st: d.st, san: d.san, cur: d.cur, weapons: d.weapons,
+      hp: d.hp, st: d.st, san: d.san, cur: d.cur, weapons: d.weapons || {},
       mag: d.mag, reserve: d.reserve, medkits: d.medkits, pills: d.pills,
       bottles: d.bottles, batteries: d.batteries, battery: d.battery, flashOn: d.flashOn,
       keys: d.keys, notes: d.notes, kills: d.kills || 0,
     });
+    /* миграция со старого сейва (v2): один магазин пистолета */
+    for (const id of ORDER) this.player.weapons[id] = !!this.player.weapons[id];
+    this.player.weapons.hands = true;
+    this.player.mags = d.mags || {};
+    for (const id of ORDER) this.player.mags[id] = Math.max(0, this.player.mags[id] | 0);
+    if (!d.mags) this.player.mags.pistol = d.mag || 0;
+    this.player.mag = this.player.mags[this.player.cur] || 0;
+    this.player.clothes = Object.assign({ body: 'robe', head: null, boots: 'slippers', hands: null }, d.clothes || {});
+    this.player.clothesOwned = Object.assign({ robe: true, slippers: true }, d.wardrobe || {});
+    for (const k in this.player.clothes) if (this.player.clothes[k] && !CLOTHES[this.player.clothes[k]]) this.player.clothes[k] = null;
     this.playTime = d.time || 0;
     for (const id of d.openedF || []) { const f = this.furniture.find(f => f.id === id); if (f) f.opened = true; }
     for (const id of d.openDoors || []) { const dr = this.doors.find(x => x.id === id); if (dr) { dr.open = true; dr.anim = 1; } }
@@ -400,6 +425,13 @@ const Game = {
     for (const s of this.solids) {
       if (s.kind === 'slab' && s.y !== fy) continue;
       if (aabb(e, s)) {
+        /* глубоко внутри препятствия — выталкиваем ВБОК (а не подбрасываем вверх) */
+        const overRight = (s.x + s.w) - e.x, overLeft = (e.x + e.w) - s.x;
+        const vOver = Math.min(e.y + e.h - s.y, s.y + s.h - e.y);
+        if (vOver > 46 && Math.min(overRight, overLeft) < 70) {
+          if (overRight < overLeft) e.x = s.x + s.w; else e.x = s.x - e.w;
+          e.vx = 0; e.y += e.vy * dt; continue;
+        }
         if (e.vy > 0 && e.y + e.h - s.y < 46) { e.y = s.y - e.h; e.vy = 0; e.onGround = true; e.onSolidGround = true; }
         else if (e.vy < 0) {
           if (isPlayer) { e.y = s.y + s.h; e.vy = 40; }
@@ -424,6 +456,17 @@ const Game = {
         }
       }
     }
+    /* смена этажа — только у настоящей опоры (пол другого этажа/лифт),
+       высота прыжка и платформы на это не влияют */
+    if (isPlayer && e.onSolidGround) {
+      const feet = e.y + e.h;
+      for (let i = 0; i < FLOORS.length; i++) {
+        if (i !== e.floor && Math.abs(feet - FLOORS[i].y) < 3) {
+          e.floor = i; this.refreshFloorHUD();
+          break;
+        }
+      }
+    }
     if (isPlayer && this.bossStarted && !this.bossDead) {
       /* арена закрыта: держим внутри */
       const b = BOSS_DEF.leash;
@@ -434,55 +477,112 @@ const Game = {
   enterFloor(e) { e.floor = this.floorAtY(e.y + e.h); },
 
   /* ================= БОЙ ================= */
-  meleeHit(box, dmg, dirx) {
+  /* ближний бой: box — зона удара, w — оружие (даёт отброс, оглушение, кровотечение) */
+  meleeHit(box, dmg, dirx, w) {
     let hit = false;
+    const strike = (t) => {
+      t.takeDamage(dmg, this, dirx);
+      if (!w) return;
+      if (w.knock) t.vx += dirx * Math.max(0, w.knock - 140) * (t.heavy ? 0.35 : 1);
+      const heavy = t.kind === 'boss' || t.kind === 'miniboss';
+      if (w.stun) t.stunT = Math.max(t.stunT || 0, w.stun * (heavy ? 0.35 : 1));
+      if (w.stunGhosts) t.stunT = Math.max(t.stunT || 0, (w.stun || 1.5) * (t.kind === 'ghost' ? 1 : 0.25));
+      if (w.bleed) { t.bleed = Math.max(t.bleed || 0, w.bleed); t.bleedT = 2.6; }
+    };
     const done = new Set();
-    for (const g of this.ghosts) if (!g.dead && aabb(box, g) && !done.has(g)) { g.takeDamage(dmg, this, dirx); done.add(g); hit = true; }
-    for (const m of this.minibosses) if (!m.dead && aabb(box, m)) { m.takeDamage(dmg, this, dirx); hit = true; }
-    if (this.boss && !this.boss.dead && aabb(box, this.boss)) { this.boss.takeDamage(dmg, this, dirx); hit = true; }
-    if (hit) { AudioSys.hitFlesh(); Camera.shake(0.18); }
+    for (const g of this.ghosts) if (!g.dead && aabb(box, g) && !done.has(g)) { strike(g); done.add(g); hit = true; }
+    for (const m of this.minibosses) if (!m.dead && aabb(box, m) && !done.has(m)) { strike(m); done.add(m); hit = true; }
+    if (this.boss && !this.boss.dead && aabb(box, this.boss)) { strike(this.boss); hit = true; }
+    if (hit) {
+      AudioSys.hitFlesh(); Camera.shake(0.18);
+      Particles.spark(box.x + (dirx > 0 ? 0 : box.w), box.y + box.h * 0.5, 8, '#ffd0d0');
+    }
     return hit;
   },
-  pistolShot(x, y, ang) {
-    const len = 980;
-    const ex = x + Math.cos(ang) * len, ey = y + Math.sin(ang) * len;
-    let bestT = 1, bestG = null;
-    const testPt = (px, py, r) => {
-      const dx = ex - x, dy = ey - y;
-      const t = clamp(((px - x) * dx + (py - y) * dy) / (len * len), 0, 1);
-      return dist(px, py, x + dx * t, y + dy * t) < r ? t : -1;
-    };
-    for (const g of this.ghosts) {
-      if (g.dead || g.floor !== this.player.floor) continue;
-      const t = testPt(g.cx(), g.cy(), Math.max(g.w, g.h) * 0.55);
-      if (t >= 0 && t < bestT) { bestT = t; bestG = g; }
+  /* ---------- стрельба ---------- */
+  shoot(w, x, y, ang) {
+    const pellets = Math.max(1, w.pellets || 1);
+    for (let i = 0; i < pellets; i++) {
+      const spread = w.spread || 0;
+      const a = ang + (pellets > 1 ? rand(-spread, spread) : rand(-spread * 0.4, spread * 0.4));
+      this.traceShot(w, x, y, a);
     }
-    for (const m of this.minibosses) {
-      if (m.dead || m.floor !== this.player.floor) continue;
-      const t = testPt(m.cx(), m.cy(), Math.max(m.w, m.h) * 0.5);
-      if (t >= 0 && t < bestT) { bestT = t; bestG = m; }
-    }
-    if (this.boss && !this.boss.dead) {
-      const t = testPt(this.boss.cx(), this.boss.cy(), 62);
-      if (t >= 0 && t < bestT) { bestT = t; bestG = this.boss; }
-    }
-    for (const d of this.doors) {
-      if (!d.solid || d.floor !== this.player.floor) continue;
-      if ((x < d.x) !== (ex < d.x)) {
-        const t = (d.x - x) / (ex - x);
-        const qy = y + (ey - y) * t;
-        if (t >= 0 && t < bestT && qy > d.y && qy < d.y + d.h) { bestT = t; bestG = null; }
-      }
-    }
-    const hx = x + (ex - x) * bestT, hy = y + (ey - y) * bestT;
-    this.effects.push({ kind: 'tracer', x1: x, y1: y, x2: hx, y2: hy, t: 0, dur: 0.14 });
-    Particles.spark(hx, hy, 6);
-    if (bestG) { bestG.takeDamage(WEAPONS.pistol.dmg, this, sign(Math.cos(ang))); AudioSys.hitFlesh(); }
-    this.addNoise(x, y, 1100);
-    for (const g of this.ghosts) if (dist(g.cx(), g.cy(), x, y) < 1000) g.alertT = 4;
+    AudioSys.shot(w);
+    this.muzzleT = 0.08;
+    this.effects.push({ kind: 'muzzle', x, y, ang, t: 0, dur: 0.1, big: !!w.pellets });
+    Particles.spark(x + Math.cos(ang) * 16, y + Math.sin(ang) * 10, 5, '#ffe9b0');
   },
+  traceShot(w, x, y, ang) {
+    const floor = this.player ? this.player.floor : 0;
+    const len = w.range || 900;
+    const cos = Math.cos(ang), sin = Math.sin(ang);
+    const pierce = Math.max(1, w.pierce || 1);
+    const hits = [];
+    let stop = len;
+    for (let s = 14; s <= len; s += 9) {
+      const px = x + cos * s, py = y + sin * s;
+      /* преграда: стены, мебель, перекрытия, закрытые двери */
+      let blocked = !!this.solidAt(px, py, 3, 3);
+      if (!blocked) {
+        for (const d of this.doors) {
+          if (!d.solid || d.floor !== floor) continue;
+          if (px > d.x - d.w / 2 && px < d.x + d.w / 2 && py > d.y && py < d.y + d.h) { blocked = true; break; }
+        }
+      }
+      if (blocked) { stop = s; break; }
+      let full = false;
+      for (const t of this.shootTargets(floor)) {
+        if (t.dead || hits.includes(t)) continue;
+        if (dist(px, py, t.cx(), t.cy()) < Math.max(t.w, t.h) * 0.5 + 4) {
+          t.takeDamage(w.dmg, this, sign(cos));
+          if (w.knockShot) t.vx += sign(cos) * w.knockShot * 0.5;
+          hits.push(t);
+          if (hits.length >= pierce) { full = true; break; }
+        }
+      }
+      if (full) { stop = s + 6; break; }
+    }
+    const hx = x + cos * stop, hy = y + sin * stop;
+    this.effects.push({ kind: 'tracer', x1: x, y1: y, x2: hx, y2: hy, t: 0, dur: 0.14 });
+    if (hits.length) { AudioSys.hitFlesh(); Particles.ichor(hx, hy, 6); }
+    else Particles.spark(hx, hy, 4, '#cfd8e0');
+  },
+  shootTargets(floor) {
+    const arr = [];
+    for (const g of this.ghosts) if (!g.dead && g.floor === floor) arr.push(g);
+    for (const m of this.minibosses) if (!m.dead && m.floor === floor) arr.push(m);
+    if (this.boss && !this.boss.dead && this.boss.floor === floor) arr.push(this.boss);
+    return arr;
+  },
+  /* совместимость со старым вызовом */
+  pistolShot(x, y, ang) { this.shoot(WEAPONS.pistol, x, y, ang); },
   spawnProjectile(o) { this.projectiles.push(new Projectile(o)); },
+  /* ближайшее свободное место (не внутри мебели/стен) — для спавна тварей и лута */
+  freeSpot(x, floorIdx, w, h, x0, x1) {
+    const y = FLOORS[floorIdx].y - h - 2;
+    const ok = px => !this.solidAt(px, y + 4, w, h - 8);
+    const search = (lo, hi) => {
+      let best = null, bd = Infinity;
+      for (let d = 0; d <= 700; d += 14) {
+        for (const s of (d === 0 ? [0] : [-1, 1])) {
+          const px = x + s * d;
+          if (px < lo || px + w > hi) continue;
+          if (ok(px)) {
+            const cost = Math.abs(px - x);
+            if (cost < bd) { bd = cost; best = px; }
+          }
+        }
+        if (best !== null && d >= bd) break;
+      }
+      return best;
+    };
+    let found = search(x0 || 20, x1 || WORLD.w - 20);
+    if (found === null) found = search(20, WORLD.w - 20);
+    return found === null ? x : found;
+  },
   spawnGhost(type, x, floorIdx, leash) {
+    const def = GHOST_DEFS[type] || { w: 46, h: 34 };
+    x = this.freeSpot(x - def.w / 2, floorIdx, def.w, def.h, leash ? leash[0] : 20, leash ? leash[1] : WORLD.w - 20) + def.w / 2;
     const g = new Ghost(type, x, floorIdx, leash);
     this.ghosts.push(g);
     Particles.soul(g.cx(), g.cy(), 12);
@@ -975,10 +1075,31 @@ const Game = {
   },
   applyLoot(code) {
     const p = this.player;
-    if (code === 'knife') { p.weapons.knife = true; p.cur = 'knife'; this.toast('🔪 Найден НОЖ! [2]', 'gold'); this.subtitle('Скальпель. Острый. Теперь они меня боятся.'); }
-    else if (code === 'pistol') { p.weapons.pistol = true; p.cur = 'pistol'; p.mag = 8; this.toast('🔫 Найден ПИСТОЛЕТ! [3] — целься мышью', 'gold'); this.subtitle('Табельный ПМ. Восемь патронов. Громкий — тени сбегутся.'); }
-    else if (code === 'pick') { p.weapons.pick = true; p.cur = 'pick'; this.toast('🥄 Найдена ЗАТЫЧКА! [4] — замки, вентиляция, щиток', 'gold'); this.subtitle('Гнутая ложка. Ею вскрывают двери. Ею же затыкают их — чтобы твари грызли железо, а не тебя.'); }
-    else if (code === 'key_red') { p.keys.key_red = true; this.toast('🔑 КРАСНЫЙ КЛЮЧ — путь в изолятор открыт', 'gold'); }
+    /* ---- одежда ---- */
+    if (code.startsWith('wear:')) {
+      const id = code.slice(5), it = CLOTHES[id];
+      if (!it) return;
+      const isNew = !p.clothesOwned[id];
+      p.wear(id);
+      const slotName = (CLOTH_SLOTS.find(s => s.id === it.slot) || {}).name || '';
+      this.toast(`${it.icon} ${it.name} — надето (${slotName})`, 'gold');
+      if (isNew) this.subtitle(it.desc);
+      this.refreshHUD();
+      return;
+    }
+    /* ---- оружие: любой ключ WEAPONS, кроме кулаков ---- */
+    if (code !== 'hands' && WEAPONS[code]) {
+      const w = WEAPONS[code];
+      const isNew = !p.weapons[code];
+      p.weapons[code] = true;
+      if (w.kind === 'gun') { p.setMag(code, Math.max(p.magOf(code), w.mag)); p.reserve += 6; }
+      p.switchTo(code);
+      this.toast(`${w.icon} ${isNew ? 'НАЙДЕНО' : 'ВЗЯТО'}: ${w.name.toUpperCase()}`, 'gold');
+      if (isNew) this.subtitle(w.desc);
+      this.refreshHUD();
+      return;
+    }
+    if (code === 'key_red') { p.keys.key_red = true; this.toast('🔑 КРАСНЫЙ КЛЮЧ — путь в изолятор открыт', 'gold'); }
     else if (code === 'key_attic') { p.keys.key_attic = true; this.toast('🗝 КЛЮЧ ОТ ЧЕРДАКА', 'gold'); }
     else if (code === 'key_ord') { p.keys.key_ord = true; this.toast('🗝 КЛЮЧ ОРДИНАТОРСКОЙ', 'gold'); }
     else if (code === 'elev_card') { this.elevatorCard = true; this.toast('🎫 КАРТА ЛИФТА', 'gold'); }
@@ -1099,22 +1220,42 @@ const Game = {
     if (!p.keys.key_ord) return '🎯 Операционная (2 этаж): ХИРУРГ БЕЗ ЛИЦА — ключ ординаторской 🗝';
     return '🎯 3 этаж → красная дверь слева от лифта → ТАМИК ☠';
   },
+  ammoText() {
+    const p = this.player, w = WEAPONS[p.cur];
+    if (!w) return '';
+    if (w.kind === 'gun') {
+      return p.reloadT > 0 ? '…перезарядка…' : `▮ ${p.magOf(p.cur)}/${w.mag} • запас ${p.reserve} [R]`;
+    }
+    if (w.pry) return 'ЛКМ — удар; E — вскрыть / заткнуть';
+    return 'ЛКМ или J — удар';
+  },
   refreshHUD() {
     const p = this.player;
     if (!p) return;
     $('notes-num').textContent = `${p.notes.length}/12`;
     $('objective').textContent = this.objectiveText();
+    /* --- быстрый доступ: только найденное оружие --- */
     const inv = $('inventory');
     inv.innerHTML = '';
-    ORDER.forEach((wid, i) => {
-      const w = WEAPONS[wid], owned = p.weapons[wid];
+    const owned = ORDER.filter(id => p.weapons[id]);
+    const quick = owned.slice(0, 8);
+    quick.forEach((wid, i) => {
+      const w = WEAPONS[wid];
       const d = document.createElement('div');
-      d.className = 'inv-slot' + (p.cur === wid ? ' active' : '') + (owned ? '' : ' locked');
-      d.title = w.name + ' — ' + w.desc;
+      d.className = 'inv-slot' + (p.cur === wid ? ' active' : '');
+      d.title = `${w.name} — ${w.desc}`;
       d.innerHTML = `<span class="key">${i + 1}</span>${w.icon}<span class="nm">${w.name}</span>`;
-      if (owned) d.onclick = () => { p.cur = wid; p.reloadT = 0; AudioSys.uiClick(); this.refreshHUD(); };
+      d.onclick = () => { p.switchTo(wid); this.refreshHUD(); };
       inv.appendChild(d);
     });
+    if (owned.length > quick.length) {
+      const d = document.createElement('div');
+      d.className = 'inv-slot more';
+      d.title = 'Остальное оружие — в инвентаре [I]';
+      d.innerHTML = `🎒<span class="cnt">+${owned.length - quick.length}</span><span class="nm">ещё</span>`;
+      d.onclick = () => this.openInventory();
+      inv.appendChild(d);
+    }
     const cons = [
       { icon: '🩹', nm: 'Аптечка', key: 'Q', cnt: p.medkits, fn: () => p.useMedkit(this) },
       { icon: '💊', nm: 'Пилюли', key: 'T', cnt: p.pills, fn: () => p.usePills(this) },
@@ -1137,10 +1278,281 @@ const Game = {
     const w = WEAPONS[p.cur];
     $('hand-icon').textContent = w.icon;
     $('hand-name').textContent = w.name;
-    $('hand-ammo').textContent = p.cur === 'pistol'
-      ? (p.reloadT > 0 ? '…перезарядка…' : `▮ ${p.mag} / ${p.reserve} [R]`)
-      : (p.cur === 'pick' ? 'E — вскрыть / заткнуть' : 'ЛКМ — ударить');
+    $('hand-ammo').textContent = this.ammoText();
     $('bat-fill').style.width = p.battery + '%';
+    const ib = $('inv-count');
+    if (ib) ib.textContent = String(owned.length + Object.keys(p.clothesOwned).length);
+    if (this.invOpen) this.renderInventory();
+  },
+
+  /* ================= ИНВЕНТАРЬ ================= */
+  openInventory() {
+    if (this.state !== 'play' || this.noteId !== null) return;
+    this.invOpen = true;
+    $('inv-modal').classList.remove('hidden');
+    this.renderInventory();
+    AudioSys.uiClick();
+  },
+  closeInventory() {
+    if (!this.invOpen) return;
+    this.invOpen = false;
+    $('inv-modal').classList.add('hidden');
+    AudioSys.uiClick();
+    this.save(true);
+  },
+  toggleInventory() { this.invOpen ? this.closeInventory() : this.openInventory(); },
+  statLine() {
+    const p = this.player;
+    const pct = v => (v > 0 ? '+' : '') + Math.round(v * 100) + '%';
+    const parts = [];
+    if (p.sumStat('def')) parts.push(`🛡 защита ${pct(p.sumStat('def'))}`);
+    if (p.sumStat('spd')) parts.push(`👟 скорость ${pct(p.sumStat('spd'))}`);
+    if (p.sumStat('san')) parts.push(`🧠 рассудок ${pct(-p.sumStat('san'))}`);
+    if (p.sumStat('noise')) parts.push(`👣 шум ${pct(p.sumStat('noise'))}`);
+    if (p.sumStat('atk')) parts.push(`⚔ темп удара ${pct(-p.sumStat('atk'))}`);
+    if (p.sumStat('battery')) parts.push(`🔋 батарея ${pct(-p.sumStat('battery'))}`);
+    const st = p.stealthMul();
+    if (st < 1) parts.push(`🌑 незаметность ${Math.round((1 - st) * 100)}%`);
+    return parts.length ? parts.join(' • ') : 'гол как сокол: ни защиты, ни бонусов';
+  },
+  renderInventory() {
+    const p = this.player;
+    if (!p || !this.invOpen) return;
+    $('inv-sum').textContent = this.statLine();
+    /* --- надетые вещи --- */
+    const slots = $('inv-slots');
+    slots.innerHTML = '';
+    for (const sl of CLOTH_SLOTS) {
+      const id = p.clothes[sl.id], it = id ? CLOTHES[id] : null;
+      const d = document.createElement('div');
+      d.className = 'inv-wear' + (it ? '' : ' empty');
+      d.innerHTML = `<div class="iw-ico">${it ? it.icon : '⛔'}</div>
+        <div class="iw-txt"><b>${sl.name}</b><span>${it ? it.name : '— пусто —'}</span></div>
+        <button class="iw-x" title="Снять">✕</button>`;
+      d.querySelector('.iw-x').onclick = e => { e.stopPropagation(); if (it) { p.unequip(sl.id); this.refreshHUD(); } };
+      slots.appendChild(d);
+    }
+    /* --- гардероб --- */
+    const wr = $('inv-wardrobe');
+    wr.innerHTML = '';
+    const ownedClothes = Object.keys(CLOTHES).filter(id => p.clothesOwned[id]);
+    if (!ownedClothes.length) wr.innerHTML = '<div class="inv-empty">Пусто. Ищи одежду в шкафах, холодильниках и тумбочках.</div>';
+    for (const sl of CLOTH_SLOTS) {
+      const list = ownedClothes.filter(id => CLOTHES[id].slot === sl.id);
+      if (!list.length) continue;
+      const h = document.createElement('div');
+      h.className = 'inv-group'; h.textContent = sl.name;
+      wr.appendChild(h);
+      const row = document.createElement('div');
+      row.className = 'inv-row';
+      for (const id of list) {
+        const it = CLOTHES[id];
+        const b = document.createElement('button');
+        b.className = 'inv-card' + (p.clothes[sl.id] === id ? ' on' : '');
+        b.title = it.desc;
+        const st = [];
+        if (it.def) st.push(`🛡${Math.round(it.def * 100)}%`);
+        if (it.spd) st.push(`👟${it.spd > 0 ? '+' : ''}${Math.round(it.spd * 100)}%`);
+        if (it.san) st.push(`🧠${it.san < 0 ? '+' : '−'}${Math.abs(Math.round(it.san * 100))}%`);
+        if (it.noise) st.push(`👣${it.noise > 0 ? '+' : ''}${Math.round(it.noise * 100)}%`);
+        if (it.atk) st.push(`⚔${Math.round(-it.atk * 100)}%`);
+        if (it.battery) st.push(`🔋${Math.round(-it.battery * 100)}%`);
+        if (it.stealth) st.push(`🌑${Math.round((1 - it.stealth) * 100)}%`);
+        b.innerHTML = `<span class="ic-ico">${it.icon}</span><span class="ic-nm">${it.name}</span><span class="ic-st">${st.join(' ') || '—'}</span>`;
+        b.onclick = () => { p.equip(id); this.renderInventory(); this.refreshHUD(); };
+        row.appendChild(b);
+      }
+      wr.appendChild(row);
+    }
+    /* --- арсенал --- */
+    const ar = $('inv-weapons');
+    ar.innerHTML = '';
+    const ownedW = ORDER.filter(id => p.weapons[id]);
+    for (const id of ownedW) {
+      const w = WEAPONS[id];
+      const b = document.createElement('button');
+      b.className = 'inv-card gun' + (p.cur === id ? ' on' : '');
+      b.title = w.desc;
+      const st = [`💥${w.dmg}`];
+      if (w.kind === 'gun') { st.push(`▮${w.mag}`); if (w.pellets) st.push(`×${w.pellets}`); if (w.pierce) st.push('⟶⟶'); }
+      else { st.push(`↔${w.range}`); if (w.stun) st.push('💫'); if (w.knock > 100) st.push('💨'); }
+      st.push(`⏱${(w.cd).toFixed(2)}с`);
+      b.innerHTML = `<span class="ic-ico">${w.icon}</span><span class="ic-nm">${w.name}</span><span class="ic-st">${st.join(' ')}</span>`;
+      b.onclick = () => { p.switchTo(id); this.renderInventory(); this.refreshHUD(); };
+      ar.appendChild(b);
+    }
+    /* --- припасы и ключи --- */
+    const it2 = $('inv-items');
+    it2.innerHTML = '';
+    const items = [
+      { icon: '🩹', nm: 'Аптечка (+45 HP)', cnt: p.medkits, fn: () => p.useMedkit(this) },
+      { icon: '💊', nm: 'Пилюли (+рассудок)', cnt: p.pills, fn: () => p.usePills(this) },
+      { icon: '🍾', nm: 'Бутылка (отвлечь)', cnt: p.bottles, fn: () => p.throwBottle(this) },
+      { icon: '🔋', nm: 'Батарейка [B]', cnt: p.batteries, fn: null },
+      { icon: '🔸', nm: 'Патроны', cnt: p.reserve, fn: null },
+      { icon: '🔑', nm: 'Красный ключ', cnt: p.keys.key_red ? 1 : 0, fn: null },
+      { icon: '🗝️', nm: 'Ключ чердака', cnt: p.keys.key_attic ? 1 : 0, fn: null },
+      { icon: '🗝️', nm: 'Ключ ординаторской', cnt: p.keys.key_ord ? 1 : 0, fn: null },
+      { icon: '🎫', nm: 'Карта лифта', cnt: this.elevatorCard ? 1 : 0, fn: null },
+      { icon: '📄', nm: 'Записки', cnt: p.notes.length, fn: null },
+    ];
+    for (const c of items) {
+      const b = document.createElement('button');
+      b.className = 'inv-card' + (c.cnt ? '' : ' off');
+      b.innerHTML = `<span class="ic-ico">${c.icon}</span><span class="ic-nm">${c.nm}</span><span class="ic-st">${c.cnt}</span>`;
+      if (c.fn && c.cnt) b.onclick = () => { c.fn(); this.renderInventory(); };
+      it2.appendChild(b);
+    }
+    this.drawCharLarge();
+  },
+  /* Большой Мишутка в инвентаре: одет во всё, что на нём надето */
+  drawCharLarge() {
+    const cv = $('inv-char'); if (!cv) return;
+    const c = cv.getContext('2d');
+    const p = this.player, t = performance.now() / 1000;
+    const W = cv.width, H = cv.height;
+    c.clearRect(0, 0, W, H);
+    const g = c.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#111a1c'); g.addColorStop(1, '#07090a');
+    c.fillStyle = g; c.fillRect(0, 0, W, H);
+    c.strokeStyle = 'rgba(143,208,255,0.08)'; c.lineWidth = 1;
+    for (let i = 0; i < 8; i++) { c.beginPath(); c.moveTo(0, 40 + i * 42); c.lineTo(W, 40 + i * 42); c.stroke(); }
+    const body = CLOTHES[p.clothes.body], head = CLOTHES[p.clothes.head];
+    const boots = CLOTHES[p.clothes.boots], hands = CLOTHES[p.clothes.hands];
+    const legs = body && body.legs ? body.legs : '#4a5a66';
+    const tors = body && body.torso ? body.torso : '#7d94a0';
+    const bootC = boots && boots.boots ? boots.boots : '#6b5d4f';
+    const skin = hands && hands.slot === 'hands' ? '#c9d2d8' : '#d8b89a';
+    const breathe = Math.sin(t * 1.6) * 3;
+    const sway = Math.sin(t * 0.9) * 2;
+    c.save();
+    c.translate(W / 2 + sway, 34 + breathe * 0.4);
+    ellipseShadow(c, 0, 316, 66, 16, 0.5);
+    /* ноги */
+    const legTop = 168, split = 1;
+    for (const s of [-1, 1]) {
+      const x = s * 15 * split;
+      c.fillStyle = s > 0 ? legs : shade(legs, -18);
+      roundRect(c, x - 17, legTop, 34, 118, 9); c.fill();
+      /* ботинки */
+      c.fillStyle = bootC;
+      roundRect(c, x - 21, 278, 42, 30, 8); c.fill();
+      c.fillStyle = 'rgba(0,0,0,0.3)'; c.fillRect(x - 21, 300, 42, 8);
+      c.fillStyle = 'rgba(255,255,255,0.10)'; c.fillRect(x - 16, 282, 32, 4);
+    }
+    /* торс — форма зависит от надетого */
+    c.fillStyle = tors;
+    c.beginPath();
+    c.moveTo(-46, 78); c.lineTo(46, 78);
+    c.quadraticCurveTo(58, 90, 52, 120);
+    c.lineTo(44, 186); c.lineTo(-44, 186); c.lineTo(-52, 120);
+    c.quadraticCurveTo(-58, 90, -46, 78); c.closePath(); c.fill();
+    c.fillStyle = shade(tors, -22); c.fillRect(-46, 78, 12, 108);
+    if (p.clothes.body === 'kevlar') {
+      c.fillStyle = '#2f3a2c'; roundRect(c, -40, 86, 80, 74, 8); c.fill();
+      c.fillStyle = '#3d4a3a'; c.fillRect(-40, 86, 80, 16);
+      c.fillStyle = '#c8b060'; c.fillRect(-24, 100, 48, 7); c.fillRect(-24, 142, 48, 6);
+      c.strokeStyle = 'rgba(0,0,0,0.4)'; c.lineWidth = 2;
+      for (let i = 0; i < 4; i++) { c.beginPath(); c.moveTo(-40, 116 + i * 16); c.lineTo(40, 116 + i * 16); c.stroke(); }
+    } else if (p.clothes.body === 'surgical' || p.clothes.body === 'orderly') {
+      c.strokeStyle = 'rgba(0,0,0,0.25)'; c.lineWidth = 3;
+      c.beginPath(); c.moveTo(0, 84); c.lineTo(0, 182); c.stroke();
+      c.fillStyle = 'rgba(255,255,255,0.35)'; c.fillRect(-30, 82, 60, 8);
+      c.fillStyle = '#dfe8e4'; roundRect(c, -40, 92, 80, 52, 6); c.fill();
+      c.fillStyle = 'rgba(90,120,110,0.5)'; c.fillRect(-40, 92, 80, 5);
+    } else if (p.clothes.body === 'raincoat' || p.clothes.body === 'leather') {
+      c.fillStyle = 'rgba(0,0,0,0.22)';
+      for (let i = 0; i < 4; i++) c.fillRect(-44, 108 + i * 20, 88, 8);
+      c.fillStyle = shade(tors, 30); roundRect(c, -50, 76, 100, 26, 10); c.fill();
+    } else {
+      c.fillStyle = 'rgba(255,255,255,0.10)'; c.fillRect(-40, 92, 80, 6);
+      if (p.clothes.body === 'robe') { c.fillStyle = '#e8dcc8'; c.font = '700 13px Rubik,sans-serif'; c.textAlign = 'center'; c.fillText('№12', 0, 140); c.textAlign = 'left'; }
+      c.fillStyle = '#5c0a12'; c.beginPath(); c.ellipse(4, 150, 7, 10, 0.3, 0, 7); c.fill();
+    }
+    /* пятно/бейдж палаты */
+    if (p.clothes.body !== 'robe') { c.fillStyle = '#e8dcc8'; c.font = '700 12px Rubik,sans-serif'; c.fillText('№12', -34, 176); }
+    /* руки */
+    for (const s of [-1, 1]) {
+      const ax = s * 50;
+      c.strokeStyle = skin; c.lineWidth = 16; c.lineCap = 'round';
+      c.beginPath(); c.moveTo(ax, 96); c.lineTo(ax + s * 10 + Math.sin(t * 1.4 + s) * 1.5, 178); c.stroke();
+      c.fillStyle = skin; c.beginPath(); c.arc(ax + s * 10, 182, 9, 0, 7); c.fill();
+      if (hands && hands.slot === 'hands') { c.fillStyle = shade(skin, -30); c.beginPath(); c.arc(ax + s * 10, 182, 9, 0, 7); c.fill(); }
+      if (hands && hands.id === 'watch' && s > 0) { c.fillStyle = '#c8a02a'; c.fillRect(ax + 4, 172, 13, 6); c.fillStyle = '#fff'; c.fillRect(ax + 8, 174, 4, 2); }
+      if (hands && hands.id === 'charm' && s < 0) { c.fillStyle = '#a5764a'; c.beginPath(); c.arc(ax - 12, 168, 7, 0, 7); c.fill(); c.fillStyle = '#3a2818'; c.beginPath(); c.arc(ax - 15, 166, 1.4, 0, 7); c.fill(); c.beginPath(); c.arc(ax - 9, 166, 1.4, 0, 7); c.fill(); }
+    }
+    /* фонарь в левой руке (всегда с Мишуткой) */
+    {
+      const on = p.flashOn && p.battery > 0, dim = p.battery < 22 ? (0.5 + Math.sin(t * 20) * 0.35) : 1;
+      c.save(); c.translate(-60, 182);
+      c.fillStyle = '#8a8f96'; roundRect(c, -14, -8, 30, 16, 4); c.fill();
+      c.fillStyle = '#3c4046'; c.fillRect(-22, -7, 9, 14);
+      c.fillStyle = on ? `rgba(255,246,216,${dim})` : '#454a50';
+      c.beginPath(); c.arc(18, 0, 8, 0, 7); c.fill();
+      if (on) { c.shadowBlur = 30 * dim; c.shadowColor = '#ffe9b0'; c.beginPath(); c.arc(19, 0, 6, 0, 7); c.fill(); c.shadowBlur = 0; }
+      c.restore();
+    }
+    /* голова */
+    c.save(); c.translate(0, 40);
+    c.fillStyle = skin;
+    c.beginPath(); c.ellipse(0, 0, 32, 38, 0, 0, 7); c.fill();
+    c.fillStyle = shade(skin, -25); c.beginPath(); c.ellipse(24, 4, 8, 12, 0.2, 0, 7); c.fill();
+    /* волосы */
+    c.fillStyle = '#4a3220';
+    c.beginPath(); c.ellipse(0, -26, 33, 17, 0, Math.PI, 0); c.fill();
+    for (let i = 0; i < 8; i++) { const a = -2.6 + i * 0.32; c.fillRect(Math.cos(a) * 30 - 4, -26 + Math.sin(a) * 16, 11, 12 + Math.sin(t * 1.5 + i) * 2); }
+    /* глаза */
+    const blink = Math.sin(t * 2.3) > 0.97 ? 0.15 : 1;
+    const insane = p.san < 30;
+    for (const s of [-1, 1]) {
+      c.fillStyle = '#fff'; c.beginPath(); c.ellipse(s * 12, 0, 8, 8 * blink, 0, 0, 7); c.fill();
+      c.fillStyle = insane ? '#7b2fbf' : '#1a1a1a';
+      c.beginPath(); c.arc(s * 13, 1, insane ? 4 : 3, 0, 7); c.fill();
+      c.fillStyle = '#fff'; c.fillRect(s * 13 - 1.5, -1, 2.4, 2.4);
+      c.fillStyle = 'rgba(60,20,60,0.55)'; c.fillRect(s * 12 - 9, -10, 18, 5);
+    }
+    /* рот */
+    c.strokeStyle = '#5a2a2a'; c.lineWidth = 3;
+    c.beginPath();
+    if (p.hp < 30) c.arc(0, 22, 7, 0.2, Math.PI - 0.2);
+    else { c.moveTo(-8, 20); c.lineTo(8, 19); }
+    c.stroke();
+    /* шрам №12 */
+    c.fillStyle = '#a31621'; c.beginPath(); c.ellipse(-24, 10, 5, 3.4, 0, 0, 7); c.fill();
+    /* аксессуар головы */
+    if (p.clothes.head === 'helmet') {
+      c.fillStyle = '#3f4a3c'; c.beginPath(); c.ellipse(0, -24, 36, 26, 0, Math.PI, 0); c.fill();
+      c.fillStyle = '#2c3329'; c.fillRect(-36, -26, 72, 8);
+      c.fillStyle = 'rgba(255,255,255,0.12)'; c.fillRect(-30, -38, 60, 6);
+    } else if (p.clothes.head === 'hood') {
+      c.fillStyle = shade(body && body.torso ? body.torso : '#5a6a66', -30);
+      c.beginPath(); c.ellipse(0, -6, 40, 44, 0, Math.PI, 0); c.fill();
+      c.beginPath(); c.moveTo(-38, -6); c.lineTo(38, -6); c.lineTo(30, 26); c.lineTo(-30, 26); c.closePath(); c.fill();
+      c.fillStyle = 'rgba(0,0,0,0.55)'; c.beginPath(); c.ellipse(0, -4, 26, 26, 0, 0, 7); c.fill();
+      c.fillStyle = insane ? '#7b2fbf' : '#e8e8e8';
+      c.beginPath(); c.arc(-11, -2, 2.6, 0, 7); c.fill(); c.beginPath(); c.arc(11, -2, 2.6, 0, 7); c.fill();
+    } else if (p.clothes.head === 'mask') {
+      c.fillStyle = '#dfe8e4'; roundRect(c, -24, 8, 48, 24, 6); c.fill();
+      c.fillStyle = 'rgba(120,140,135,0.6)'; for (let i = 0; i < 3; i++) c.fillRect(-22, 12 + i * 6, 44, 3);
+    } else if (p.clothes.head === 'cap') {
+      c.fillStyle = '#2f4a6a'; c.beginPath(); c.ellipse(0, -30, 33, 16, 0, Math.PI, 0); c.fill();
+      c.fillStyle = '#26405c'; c.fillRect(-2, -34, 44, 8);
+      c.fillStyle = '#c8b060'; c.beginPath(); c.arc(0, -40, 4, 0, 7); c.fill();
+    }
+    c.restore();
+    /* оружие в правой руке */
+    c.save();
+    c.translate(62, 170); c.rotate(-0.35);
+    const w = WEAPONS[p.cur];
+    c.fillStyle = '#22262b'; roundRect(c, -6, -4, w.kind === 'gun' ? 44 : 30, 9, 3); c.fill();
+    c.fillStyle = '#c9d2d8'; c.fillRect(20, 3, 8, 24);
+    c.fillStyle = '#e8dcc8'; c.font = '700 11px Rubik,sans-serif';
+    c.fillText(w.name, 30, -18);
+    c.restore();
+    /* низ: подпись */
+    c.fillStyle = 'rgba(143,208,255,0.65)'; c.font = '600 12px Rubik,sans-serif';
+    c.fillText('МИШУТКА · палата №12', 12, H - 14);
+    c.restore();
   },
   drawPortrait() {
     const pc = $('portrait').getContext('2d');
@@ -1227,7 +1639,9 @@ const Game = {
     /* один сбойный кадр не должен ронять всю игру */
     try {
       if (this.state === 'cutscene') this.updateCutscene(dt);
-      else if (this.state === 'play' && !this.paused) this.update(dt);
+      else if (this.state === 'play' && !this.paused) {
+        if (this.invOpen) this.updateInventoryView(dt); else this.update(dt);
+      }
       else if (this.state === 'crawl') this.updateCrawl(dt);
       else if (this.state === 'title') this.titleT += dt;
     } catch (e) { this.reportError('update', e); }
@@ -1237,8 +1651,12 @@ const Game = {
     }
     if (Input.pressed['KeyM']) { AudioSys.toggleMute(); this.syncMuteBtn(); }
     if (this.state === 'play') {
+      if (Input.pressed['KeyI'] || Input.pressed['Tab']) {
+        if (this.noteId === null && !this.player.mini) this.toggleInventory();
+      }
       if (Input.pressed['Escape'] || Input.pressed['KeyP']) {
-        if (this.noteId !== null) this.closeNote();
+        if (this.invOpen) this.closeInventory();
+        else if (this.noteId !== null) this.closeNote();
         else if (this.player.mini) { this.player.mini = null; this.hideMini(); }
         else this.togglePause();
       }
@@ -1246,6 +1664,13 @@ const Game = {
     }
     if (this.state === 'dead' && Input.pressed['KeyE']) this.retry();
     Input.endFrame();
+  },
+  /* пока открыт инвентарь — мир замирает, но Мишутка в инвентаре живёт */
+  updateInventoryView(dt) {
+    this.playTime += dt;
+    Particles.update(dt);
+    this.drawCharLarge();
+    if (this.player.eggsT === undefined) this.player.eggsT = 0;
   },
   updateCrawl(dt) {
     this.crawlT -= dt;
@@ -1457,7 +1882,7 @@ const Game = {
     $('st-fill').style.width = p.st + '%';
     $('san-fill').style.width = p.san + '%';
     $('hp-num').textContent = Math.ceil(p.hp);
-    if (p.cur === 'pistol') $('hand-ammo').textContent = p.reloadT > 0 ? '…перезарядка…' : `▮ ${p.mag} / ${p.reserve} [R]`;
+    $('hand-ammo').textContent = this.ammoText();
     $('bat-fill').style.width = p.battery + '%';
     $('sanity-fx').style.opacity = p.san < 55 ? ((55 - p.san) / 55 * 0.85).toFixed(2) : 0;
     if (this.dmgFlash > 0) { this.dmgFlash -= dt * 2; $('damage-flash').style.opacity = clamp(this.dmgFlash, 0, 0.9); }
@@ -1574,7 +1999,7 @@ const Game = {
       c.fillStyle = '#ffd166'; c.font = '700 15px Rubik,sans-serif'; c.textAlign = 'center';
       c.fillText('W / S — лезть', VW / 2, 92); c.restore();
     }
-    if (this.state === 'play' && !this.paused && this.noteId === null && p && !p.dead && !p.mini) {
+    if (this.state === 'play' && !this.paused && this.noteId === null && !this.invOpen && p && !p.dead && !p.mini) {
       drawCrosshair(c, Input.mouse.sx, Input.mouse.sy, p.cur, p.atkCd <= 0, p.channel ? 4 : 0);
     }
   },
