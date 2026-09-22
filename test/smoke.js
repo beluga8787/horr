@@ -7,19 +7,33 @@ const path = require('path');
 const DIR = path.join(__dirname, '..');
 
 let failures = 0;
+/* строгий 2D-контекст: любой вызов несуществующего метода canvas — ошибка */
+const CTX_METHODS = new Set(`save restore scale rotate translate transform setTransform resetTransform
+  beginPath closePath moveTo lineTo bezierCurveTo quadraticCurveTo arc arcTo ellipse rect roundRect
+  fill stroke clip fillRect strokeRect clearRect fillText strokeText measureText createLinearGradient
+  createRadialGradient createConicGradient createPattern createImageData getImageData putImageData
+  setLineDash getLineDash drawImage isPointInPath drawFocusIfNeeded scrollPathIntoView`.split(/\s+/));
+const CTX_PROPS = new Set(`fillStyle strokeStyle lineWidth lineCap lineJoin miterLimit font textAlign
+  textBaseline direction globalAlpha globalCompositeOperation shadowBlur shadowColor shadowOffsetX
+  shadowOffsetY lineDashOffset filter imageSmoothingEnabled imageSmoothingQuality canvas`.split(/\s+/));
 function makeCtx() {
-  return new Proxy({}, {
+  const store = {};
+  return new Proxy(store, {
     get(t, k) {
-      if (k === 'canvas') return {};
-      if (k === 'getImageData') return () => ({ data: new Uint8ClampedArray(4) });
-      if (k === 'createImageData') return () => ({ data: new Uint8ClampedArray(4) });
-      if (k === 'measureText') return () => ({ width: 40 });
-      return (...a) => {
-        if (typeof k === 'string' && k.startsWith('create')) return { addColorStop() {} };
-        return undefined;
-      };
+      if (typeof k === 'symbol') return undefined;
+      if (CTX_METHODS.has(k)) {
+        if (k === 'measureText') return () => ({ width: 40 });
+        if (k === 'getImageData' || k === 'createImageData') return () => ({ data: new Uint8ClampedArray(4) });
+        if (k === 'createLinearGradient' || k === 'createRadialGradient' || k === 'createConicGradient') return () => ({ addColorStop() {} });
+        if (k === 'createPattern') return () => ({});
+        if (k === 'getLineDash') return () => [];
+        if (k === 'isPointInPath') return () => false;
+        return () => undefined;
+      }
+      if (CTX_PROPS.has(k)) return t[k];
+      return undefined;
     },
-    set() { return true; }
+    set(t, k, v) { t[k] = v; return true; }
   });
 }
 const elements = {};
